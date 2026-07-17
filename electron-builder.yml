@@ -1,0 +1,23 @@
+appId: com.toluistudios.bridge
+productName: Bridge
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!.claude/*'
+  - '!src/*'
+  - '!fixtures/*'
+  - '!docs/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
+  - '!{.gitattributes,CLAUDE.md,GOALS.md,README.md}'
+win:
+  executableName: Bridge
+  target:
+    - nsis
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+npmRebuild: false

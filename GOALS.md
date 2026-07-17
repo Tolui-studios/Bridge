@@ -6,8 +6,8 @@
 
 ## Checklist
 
-- [ ] Repo hygiene (brief, CLAUDE.md, git config files) <!-- in-progress -->
-- [ ] Toolchain (electron-vite + react + ts + tailwind + vitest)
+- [x] Repo hygiene (brief, CLAUDE.md, git config files)
+- [ ] Toolchain (electron-vite + react + ts + tailwind + vitest) <!-- in-progress -->
 - [ ] Minimal window boots
 - [ ] Dark Tailwind shell
 - [ ] GOALS.md parser + tests
