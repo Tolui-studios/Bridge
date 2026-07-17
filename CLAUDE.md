@@ -1,0 +1,55 @@
+# Bridge
+
+Desktop mission-control app for a solo Roblox game studio (org: **Tolui-studios**). One dashboard to switch between game repos, see each game's current goal + a live progress bar parsed from that repo's `GOALS.md`, and (in later phases) spawn and stream Claude Code agents into per-game git worktrees via `@anthropic-ai/claude-agent-sdk` from the Electron main process.
+
+- Full product brief and roadmap: `docs/BRIEF.md`
+- Current phase + live checklist: `GOALS.md` (repo root — Bridge dogfoods its own check-bar)
+- **Phase status: Phase 1 (scaffold + registry + goals panel). No agent/SDK/worktree code exists yet.**
+
+## Commands
+
+```
+npm run dev          # electron-vite dev with HMR (opens the app window)
+npm run test         # vitest — parser unit tests
+npm run typecheck    # tsc over both projects (node + web)
+npm run build        # typecheck + electron-vite build → out/
+npm run build:win    # NSIS installer → dist/
+```
+
+## Architecture
+
+Electron, ESM end-to-end (`"type": "module"`).
+
+| Layer | Path | Responsibility |
+|---|---|---|
+| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/template (`goals.ts`), IPC handlers + native dialogs (`ipc.ts`). Owns ALL fs/process work. |
+| Preload | `src/preload/` | `contextBridge` exposure of `window.bridge` only — typed wrappers, zero logic. |
+| Renderer | `src/renderer/` | React 19 + Tailwind v4 dashboard. Never touches Node APIs; talks only through `window.bridge`. |
+| Shared | `src/shared/` | Types (`types.ts`), IPC channel constants (`ipc-channels.ts`), pure GOALS.md parser (`goalsParser.ts`, vitest-covered). |
+
+Data flow: renderer → `window.bridge.*` → `ipcRenderer.invoke` → `ipcMain.handle` in `src/main/ipc.ts` → registry/goals modules. Push path: chokidar watcher in main → `bridge:event:goals-changed` / `bridge:event:registry-changed` → preload subscription → renderer hooks (`useGames`, `useGoals`).
+
+Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), schema `{ version: 1, games: [] }`, atomic tmp+rename writes.
+
+## Hard rules
+
+1. **Single-writer:** only the Electron main process writes any `GOALS.md` (Bridge's or a game's). Renderer and (future) agents never write it — agents report over the SDK stream and Bridge updates the file.
+2. **Renderer purity:** no `fs`, no `child_process`, no Node APIs in `src/renderer/`. If the UI needs something new from the system, add an IPC channel: constant in `src/shared/ipc-channels.ts` → types in `src/shared/types.ts` (extend `BridgeApi`) → handler in `src/main/ipc.ts` → wrapper in `src/preload/index.ts`.
+3. **Parser stays pure and total:** `parseGoals` never throws, never touches fs; every behavior change gets a vitest case in `goalsParser.test.ts`.
+4. **Cross-platform paths:** always `node:path` joins, never hardcoded `/` or `\`, never `~`. GOALS.md is pinned LF via `.gitattributes`; the parser still normalizes CRLF on read.
+5. **ESM specifics:** preload must be referenced as `../preload/index.mjs` and requires `sandbox: false`; `contextIsolation` stays `true`, `nodeIntegration` stays `false`. Do not "fix" these.
+
+## Version pins — do not casually upgrade
+
+- `vite` stays **7.x** and `@vitejs/plugin-react` stays **5.x**: electron-vite 5 supports vite ^5–^7 only. Upgrading either to latest (vite 8 / plugin-react 6) breaks the build. Revisit only when electron-vite declares vite 8 support.
+- `typescript` stays 5.x (TS 7 native compiler not yet adopted here).
+- Node >= 22.12 required (Node 24 LTS is the dev machine target).
+
+## Environment notes
+
+- Dev machines: Windows 10 (PowerShell) + macOS. This repo lives inside OneDrive on the PC — if `npm install` hits EPERM/locked-file errors, pause OneDrive sync and retry; keep the repo folder marked "Always keep on this device".
+- File-watch escape hatch: `BRIDGE_WATCH_POLL=1` switches chokidar to polling if change events ever go missing (OneDrive placeholder edge cases).
+
+## Later phases (context, not scope)
+
+Phase 2: spawn one agent per game via Agent SDK (`query()`, `cwd` = worktree, `permissionMode: 'acceptEdits'`, `allowedTools` whitelist), stream to UI. Phase 3: worktree create/reuse (`worktreeRoot` field already stored per game). Phase 4: agent stream → GOALS.md auto-updates through the single writer. Phase 5: Obsidian vault read/write. Phase 6: cross-machine sync. The games themselves are Roblox/Luau repos — game agents edit Luau `src` only and never touch Rojo; that constraint lives in the games' own CLAUDE.md files, not here.
