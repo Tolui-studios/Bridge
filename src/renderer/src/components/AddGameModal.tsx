@@ -8,6 +8,8 @@ interface Props {
   initial: Game | null
   onClose: () => void
   onSubmit: (value: AddGameInput | Game) => Promise<GameMutationResult>
+  /** Create-new-game flow (folder + git init + org repo); absent in edit mode. */
+  onCreate?: (name: string) => Promise<GameMutationResult>
 }
 
 function basename(p: string): string {
@@ -15,7 +17,7 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
-export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
+export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: Props) {
   const [name, setName] = useState(initial?.name ?? '')
   const [repoPath, setRepoPath] = useState(initial?.repoPath ?? '')
   const [defaultBranch, setDefaultBranch] = useState(initial?.defaultBranch ?? 'main')
@@ -23,8 +25,10 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedWarnings, setSavedWarnings] = useState<string[] | null>(null)
+  const [mode, setMode] = useState<'create' | 'existing'>('create')
 
   const editing = initial !== null
+  const creating = !editing && mode === 'create' && onCreate !== undefined
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -46,10 +50,15 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
     setBusy(true)
     setError(null)
     try {
-      const value: AddGameInput | Game = editing
-        ? { ...(initial as Game), name, repoPath, defaultBranch, worktreeRoot }
-        : { name, repoPath, defaultBranch, worktreeRoot }
-      const result = await onSubmit(value)
+      let result: GameMutationResult
+      if (creating) {
+        result = await onCreate(name)
+      } else {
+        const value: AddGameInput | Game = editing
+          ? { ...(initial as Game), name, repoPath, defaultBranch, worktreeRoot }
+          : { name, repoPath, defaultBranch, worktreeRoot }
+        result = await onSubmit(value)
+      }
       if (result.warnings.length > 0) {
         setSavedWarnings(result.warnings)
       } else {
@@ -61,6 +70,8 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
       setBusy(false)
     }
   }
+
+  const canSubmit = creating ? name.trim().length > 0 : name.trim().length > 0 || !editing
 
   return (
     <div
@@ -97,49 +108,97 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
             <h3 className="text-lg font-semibold text-neutral-100">
               {editing ? 'Edit game' : 'Add game'}
             </h3>
-            <div className="mt-5 space-y-4">
-              <Field label="Repo path">
-                <div className="flex gap-2">
-                  <input
-                    value={repoPath}
-                    onChange={(e) => setRepoPath(e.target.value)}
-                    placeholder="C:\path\to\game-repo"
-                    className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
-                  />
-                  <button
-                    onClick={() => void browse()}
-                    className="shrink-0 rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800"
-                  >
-                    Browse…
-                  </button>
-                </div>
-              </Field>
-              <Field label="Name">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="My Game"
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-600"
-                />
-              </Field>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Default branch">
-                  <input
-                    value={defaultBranch}
-                    onChange={(e) => setDefaultBranch(e.target.value)}
-                    placeholder="main"
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
-                  />
-                </Field>
-                <Field label="Worktree root">
-                  <input
-                    value={worktreeRoot}
-                    onChange={(e) => setWorktreeRoot(e.target.value)}
-                    placeholder="(auto)"
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
-                  />
-                </Field>
+            {!editing && onCreate && (
+              <div className="mt-3 flex gap-1 rounded-lg bg-neutral-950 p-1">
+                <button
+                  onClick={() => setMode('create')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                    mode === 'create'
+                      ? 'bg-neutral-800 text-neutral-100'
+                      : 'text-neutral-500 hover:text-neutral-300'
+                  }`}
+                >
+                  Create new game
+                </button>
+                <button
+                  onClick={() => setMode('existing')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                    mode === 'existing'
+                      ? 'bg-neutral-800 text-neutral-100'
+                      : 'text-neutral-500 hover:text-neutral-300'
+                  }`}
+                >
+                  Add existing repo
+                </button>
               </div>
+            )}
+            <div className="mt-5 space-y-4">
+              {creating ? (
+                <>
+                  <Field label="Name">
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Kingdom of Ash"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && name.trim()) void submit()
+                      }}
+                      className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-600"
+                    />
+                  </Field>
+                  <p className="rounded-md border border-neutral-800 bg-neutral-950/60 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+                    Creates a folder in your games folder, initializes git with a starter
+                    GOALS.md, and creates a private repo in the studio's GitHub org — teammates
+                    will see it under Team games automatically.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Field label="Repo path">
+                    <div className="flex gap-2">
+                      <input
+                        value={repoPath}
+                        onChange={(e) => setRepoPath(e.target.value)}
+                        placeholder="C:\path\to\game-repo"
+                        className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
+                      />
+                      <button
+                        onClick={() => void browse()}
+                        className="shrink-0 rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800"
+                      >
+                        Browse…
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label="Name">
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="My Game"
+                      className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-600"
+                    />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Default branch">
+                      <input
+                        value={defaultBranch}
+                        onChange={(e) => setDefaultBranch(e.target.value)}
+                        placeholder="main"
+                        className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
+                      />
+                    </Field>
+                    <Field label="Worktree root">
+                      <input
+                        value={worktreeRoot}
+                        onChange={(e) => setWorktreeRoot(e.target.value)}
+                        placeholder="(auto)"
+                        className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-200 outline-none focus:border-emerald-600"
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
             </div>
             {error && (
               <p className="mt-4 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
@@ -156,10 +215,18 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
               </button>
               <button
                 onClick={() => void submit()}
-                disabled={busy}
+                disabled={busy || !canSubmit}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                {busy ? 'Saving…' : editing ? 'Save changes' : 'Add game'}
+                {busy
+                  ? creating
+                    ? 'Creating…'
+                    : 'Saving…'
+                  : creating
+                    ? 'Create game'
+                    : editing
+                      ? 'Save changes'
+                      : 'Add game'}
               </button>
             </div>
           </>

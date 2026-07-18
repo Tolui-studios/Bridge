@@ -1,6 +1,7 @@
 export const IPC = {
   GamesList: 'bridge:games:list',
   GamesAdd: 'bridge:games:add',
+  GamesCreate: 'bridge:games:create',
   GamesUpdate: 'bridge:games:update',
   GamesRemove: 'bridge:games:remove',
   GoalsGet: 'bridge:goals:get',

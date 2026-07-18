@@ -15,7 +15,21 @@ import type { SettingsStore } from './settings'
 import type { VaultService } from './vault'
 import type { TeamSync } from './teamSync'
 import type { WorktreeService } from './worktrees'
-import { cloneRepo, normalizeRemoteKey, pull, pushBranchForPr, remoteUrl, repoStatus } from './gitOps'
+import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
+import {
+  cloneRepo,
+  commitAll,
+  createGithubRepo,
+  initRepo,
+  normalizeRemoteKey,
+  pull,
+  pushBranchForPr,
+  remoteUrl,
+  repoSlug,
+  repoStatus
+} from './gitOps'
+import path from 'node:path'
+import fs from 'node:fs'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -47,6 +61,37 @@ export function registerIpc(
     team.onGameAdded(result.game)
     broadcastRegistry()
     return result
+  })
+
+  ipcMain.handle(IPC.GamesCreate, async (_event, rawName: string) => {
+    const name = rawName.trim()
+    if (!name) throw new Error('Game name is required.')
+    const slug = repoSlug(name)
+    const dir = path.join(settings.ensureGamesRoot(), slug)
+    if (fs.existsSync(dir)) {
+      throw new Error(`${dir} already exists — pick a different name or add it as an existing repo.`)
+    }
+    await initRepo(dir)
+    const result = registry.add({ name, repoPath: dir })
+    goals.createTemplate(result.game.id)
+    const warnings: string[] = []
+    try {
+      await commitAll(dir, `chore: bootstrap ${name} via Bridge`)
+      try {
+        await createGithubRepo(dir, STUDIO_GITHUB_ORG, slug)
+      } catch (err) {
+        warnings.push(
+          `Created locally, but the GitHub repo was not created: ${err instanceof Error ? err.message : String(err)}. Install the GitHub CLI (winget install GitHub.cli, then gh auth login) or create ${STUDIO_GITHUB_ORG}/${slug} manually and add it as origin.`
+        )
+      }
+    } catch (err) {
+      warnings.push(
+        `Repo initialized but the first commit failed: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+    team.onGameAdded(result.game)
+    broadcastRegistry()
+    return { game: result.game, warnings }
   })
 
   ipcMain.handle(IPC.GamesUpdate, (_event, game: Game) => {

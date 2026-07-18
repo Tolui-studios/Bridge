@@ -63,6 +63,44 @@ export async function remoteUrl(repoPath: string): Promise<string | null> {
   }
 }
 
+/** GitHub-safe repo name from a display name: 'My Cool Game!' -> 'My-Cool-Game'. */
+export function repoSlug(name: string): string {
+  const slug = name
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  if (!slug) throw new Error('Game name must contain letters or numbers.')
+  return slug
+}
+
+export async function initRepo(dir: string): Promise<void> {
+  fs.mkdirSync(dir, { recursive: true })
+  await execFileAsync('git', ['init', '-b', 'main', dir], { windowsHide: true })
+}
+
+export async function commitAll(repoPath: string, message: string): Promise<void> {
+  await git(repoPath, ['add', '-A'])
+  await git(repoPath, ['commit', '-m', message])
+}
+
+/** Create the private org repo, wire it as origin, and push (needs gh CLI, authed). */
+export async function createGithubRepo(repoPath: string, org: string, slug: string): Promise<void> {
+  try {
+    await execFileAsync(
+      'gh',
+      ['repo', 'create', `${org}/${slug}`, '--private', '--source', repoPath, '--remote', 'origin', '--push'],
+      { windowsHide: true }
+    )
+  } catch (err) {
+    const anyErr = err as { stderr?: string; message?: string; code?: string }
+    const detail =
+      anyErr.code === 'ENOENT'
+        ? 'the GitHub CLI (gh) is not installed'
+        : (anyErr.stderr || anyErr.message || 'gh failed').trim().slice(0, 300)
+    throw new Error(detail)
+  }
+}
+
 /** Clone `url` into `<parentDir>/<folderName>`; returns the new repo path. */
 export async function cloneRepo(url: string, parentDir: string, folderName: string): Promise<string> {
   const dest = path.join(parentDir, folderName)

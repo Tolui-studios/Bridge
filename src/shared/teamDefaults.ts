@@ -13,3 +13,6 @@ export const TEAM_DEFAULTS = {
   url: 'https://fwjxjgehzenefrwdwyxt.supabase.co',
   anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3anhqZ2VoemVuZWZyd2R3eXh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNTYzODYsImV4cCI6MjA5OTkzMjM4Nn0.VLIOmAySR-o5zC0VY4vzw91NfCKk5oh2pzdcf4E9fsU'
 }
+
+/** New games get their private repo created here (needs `gh` CLI, authed). */
+export const STUDIO_GITHUB_ORG = 'Tolui-studios'

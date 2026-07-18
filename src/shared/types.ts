@@ -257,6 +257,8 @@ export interface UsageSnapshot {
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
+  /** Create a brand-new game: folder in the games root, git init, GOALS.md, GitHub org repo. */
+  createGame(name: string): Promise<GameMutationResult>
   updateGame(game: Game): Promise<GameMutationResult>
   removeGame(id: string): Promise<void>
   getGoals(gameId: string): Promise<GoalsState>

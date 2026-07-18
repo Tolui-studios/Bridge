@@ -79,6 +79,11 @@ export default function App() {
             setSelectedId(result.game.id)
             return result
           }}
+          onCreate={async (name) => {
+            const result = await window.bridge.createGame(name)
+            setSelectedId(result.game.id)
+            return result
+          }}
         />
       )}
     </div>
