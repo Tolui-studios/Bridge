@@ -100,6 +100,10 @@ export class TeamSync {
   private lastTouchAt = 0
   private tickTimer: NodeJS.Timeout | null = null
   private tickCount = 0
+  /** True once this client has successfully subscribed at least once. */
+  private everOnline = false
+  private reconnectTimer: NodeJS.Timeout | null = null
+  private reconnectAttempt = 0
 
   constructor(private readonly deps: TeamSyncDeps) {}
 
@@ -488,12 +492,69 @@ export class TeamSync {
     this.stopTick()
     this.tickTimer = setInterval(() => {
       this.tickCount++
+      // Watchdog: if we ever end up disconnected with no recovery pending
+      // (whatever the path), start one — "stuck on Reconnecting…" is banned.
+      if (this.everOnline && this.status !== 'online' && !this.reconnectTimer && this.client) {
+        this.scheduleReconnect()
+      }
       if (this.tickCount % 5 === 0) {
         void Promise.all([this.loadMembers(), this.loadTeamGames()]).then(() => this.publishState())
       } else {
         this.publishState()
       }
     }, TICK_MS)
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.client || this.reconnectTimer) return
+    const attempt = this.reconnectAttempt
+    this.reconnectAttempt++
+    const delay = Math.min(30_000, 2_000 * 2 ** Math.min(attempt, 4))
+    this.setStatus(
+      'connecting',
+      attempt === 0 ? 'Connection lost — reconnecting…' : `Reconnecting (attempt ${attempt + 1})…`
+    )
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      void this.reconnect()
+    }, delay)
+  }
+
+  private async reconnect(): Promise<void> {
+    const client = this.client
+    if (!client) return
+    try {
+      // Refresh auth first — an expired JWT is the usual reason rejoins fail
+      // silently forever. getSession() refreshes when needed.
+      const { data, error } = await client.auth.getSession()
+      if (error || !data.session) {
+        this.setStatus('error', 'Session expired — sign in to the team again.')
+        return
+      }
+      try {
+        await client.realtime.setAuth(data.session.access_token)
+      } catch {
+        // Older client versions update realtime auth internally.
+      }
+      const old = this.channel
+      this.channel = null
+      if (old) {
+        try {
+          await client.removeChannel(old)
+        } catch {
+          // The socket may already be gone.
+        }
+      }
+      await this.openChannel()
+      if (this.status === 'online') {
+        await Promise.all([this.loadTeamGames(), this.loadMembers(), this.loadInitialSessions()])
+        this.publishState()
+      } else {
+        this.scheduleReconnect()
+      }
+    } catch {
+      this.scheduleReconnect()
+    }
   }
 
   private stopTick(): void {
@@ -590,22 +651,32 @@ export class TeamSync {
         { event: '*', schema: 'public', table: 'sessions' },
         (payload) => this.onSessionChange(payload.new as Partial<SessionRow>)
       )
+      // Register as the active channel BEFORE subscribing so the callback
+      // guard below is exact: only the current channel drives state.
+      this.channel = channel
       channel.subscribe((status) => {
+        // A replaced/torn-down channel must never drive state transitions.
+        if (this.channel !== channel) return
         if (status === 'SUBSCRIBED') {
+          this.everOnline = true
+          this.reconnectAttempt = 0
           this.setStatus('online', null)
           void this.trackPresence()
           settle()
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          this.setStatus(
-            'error',
-            `Realtime channel ${status.toLowerCase().replace('_', ' ')} — verify the SQL setup from docs/TEAM-SYNC.md (realtime publication included).`
-          )
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           settle()
-        } else if (status === 'CLOSED' && this.status === 'online') {
-          this.setStatus('connecting', 'Reconnecting…')
+          if (this.everOnline) {
+            // A previously-healthy connection dropped (token expiry, sleep,
+            // network blip) — recover ourselves; supabase-js won't always.
+            this.scheduleReconnect()
+          } else {
+            this.setStatus(
+              'error',
+              `Realtime channel ${status.toLowerCase().replace('_', ' ')} — verify the SQL setup from docs/TEAM-SYNC.md (realtime publication included).`
+            )
+          }
         }
       })
-      this.channel = channel
     })
   }
 
@@ -772,6 +843,12 @@ export class TeamSync {
 
   private async teardown(): Promise<void> {
     this.stopTick()
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempt = 0
+    this.everOnline = false
     if (this.channel && this.client) {
       try {
         await this.client.removeChannel(this.channel)
