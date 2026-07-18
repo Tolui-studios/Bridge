@@ -156,6 +156,8 @@ export interface TeamUserPresence {
   activity: TeamActivity
   /** Epoch ms of their last recorded action, null if unknown. */
   lastActiveAt: number | null
+  /** Hostnames of the machines this user is currently connected from. */
+  machines: string[]
   /** Local game id the user is focused on (resolved per machine), null if unknown here. */
   gameId: string | null
   /** Raw shared game key (normalized remote URL) for cross-machine identity. */

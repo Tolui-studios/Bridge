@@ -74,6 +74,14 @@ export default function TeamBlock() {
                 {user.name}
                 {user.name === team.me ? ' (you)' : ''}
               </span>
+              {user.online && user.machines.length > 0 && (
+                <span
+                  className="truncate text-[9px] text-neutral-600"
+                  title={`Connected from: ${user.machines.join(', ')}`}
+                >
+                  {user.machines.join(' · ')}
+                </span>
+              )}
               {user.agents > 0 && (
                 <span className="text-[9px] text-amber-400">
                   {user.agents} agent{user.agents > 1 ? 's' : ''}

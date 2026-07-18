@@ -1,5 +1,6 @@
 import { webContents } from 'electron'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
@@ -47,6 +48,7 @@ interface SessionRow {
 
 interface PresencePayload {
   name: string
+  machine: string
   gameKey: string | null
   agents: number
 }
@@ -55,6 +57,7 @@ interface RawPresence {
   name: string
   gameKey: string | null
   agents: number
+  machines: string[]
 }
 
 const IDLE_AFTER_MS = 10 * 60_000
@@ -87,6 +90,7 @@ export class TeamSync {
   private me: string | null = null
   private focusGameId: string | null = null
   private presence: RawPresence[] = []
+  private readonly machine = shortHostname()
   private sessions = new Map<string, TeamRemoteSession>()
   private gameKeys = new Map<string, string | null>()
   /** Shared game index: key (normalized remote) -> display name. */
@@ -191,6 +195,7 @@ export class TeamSync {
         online,
         activity,
         lastActiveAt,
+        machines: present?.machines ?? [],
         gameId: present?.gameKey ? this.gameIdForKey(present.gameKey) : null,
         gameKey: present?.gameKey ?? null,
         agents: present?.agents ?? 0
@@ -259,8 +264,9 @@ export class TeamSync {
   // ---------------------------------------------------------------- presence
 
   async setFocus(gameId: string | null): Promise<void> {
+    // Deliberately NOT activity: an app launching (or auto-selecting a game)
+    // is presence, not work — only real actions refresh the activity dot.
     this.focusGameId = gameId
-    this.touchActivity()
     await this.trackPresence()
   }
 
@@ -533,7 +539,10 @@ export class TeamSync {
         }
       }, 10_000)
       const channel = this.client.channel('bridge-team', {
-        config: { presence: { key: this.me ?? 'unknown' } }
+        // Per-machine presence key: the same account on PC and Mac shows as
+        // two presences (merged by name, machine-tagged) instead of one
+        // entry where the last machine to report masks the others.
+        config: { presence: { key: `${this.me ?? 'unknown'}::${this.machine}` } }
       })
       channel.on('presence', { event: 'sync' }, () => {
         this.readPresence(channel)
@@ -606,6 +615,7 @@ export class TeamSync {
     const gameKey = focusGame ? await this.keyFor(focusGame) : null
     const payload: PresencePayload = {
       name: this.me ?? 'unknown',
+      machine: this.machine,
       gameKey,
       agents: this.deps.getLiveAgentCount()
     }
@@ -618,17 +628,26 @@ export class TeamSync {
 
   private readPresence(channel: RealtimeChannel): void {
     const state = channel.presenceState<PresencePayload>()
-    const presence: RawPresence[] = []
+    const byName = new Map<string, RawPresence>()
     for (const entries of Object.values(state)) {
       const latest = entries[entries.length - 1]
       if (!latest) continue
-      presence.push({
-        name: latest.name,
-        gameKey: latest.gameKey,
-        agents: latest.agents ?? 0
-      })
+      const machine = latest.machine ?? '?'
+      const existing = byName.get(latest.name)
+      if (!existing) {
+        byName.set(latest.name, {
+          name: latest.name,
+          gameKey: latest.gameKey,
+          agents: latest.agents ?? 0,
+          machines: [machine]
+        })
+      } else {
+        existing.agents += latest.agents ?? 0
+        if (!existing.machines.includes(machine)) existing.machines.push(machine)
+        if (!existing.gameKey && latest.gameKey) existing.gameKey = latest.gameKey
+      }
     }
-    this.presence = presence
+    this.presence = [...byName.values()]
   }
 
   private async onGoalsChange(row: Partial<GoalsRow>): Promise<void> {
@@ -786,6 +805,14 @@ export class TeamSync {
 function displayName(email: string): string {
   const at = email.indexOf('@')
   return at > 0 ? email.slice(0, at) : email
+}
+
+function shortHostname(): string {
+  try {
+    return os.hostname().split('.')[0].slice(0, 16) || 'machine'
+  } catch {
+    return 'machine'
+  }
 }
 
 function noteState(row: NoteRow): TeamNoteState {
