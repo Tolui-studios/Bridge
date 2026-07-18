@@ -226,6 +226,8 @@ export interface UsageSnapshot {
   windows: UsageWindow[]
   fetchedAt: number
   reason: string | null
+  /** True when showing last-known data because the usage API is rate-limiting us. */
+  stale: boolean
 }
 
 export interface BridgeApi {

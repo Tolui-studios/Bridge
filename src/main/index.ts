@@ -85,6 +85,7 @@ if (!gotLock) {
     agents = new AgentService(worktrees, new SessionStore(join(app.getPath('userData'), 'sessions')), {
       onSettled: () => void usage?.refresh(),
       onStatus: (summary) => team.publishSession(summary),
+      onRateLimit: (info) => usage?.ingestRateLimit(info),
       taskFooter: (gameId) => buildTaskFooter(goalsService, gameId),
       applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker),
       vaultContext: (_gameId, relPaths) => vault.buildContext(relPaths),

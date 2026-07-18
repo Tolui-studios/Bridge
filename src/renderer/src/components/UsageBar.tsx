@@ -23,6 +23,11 @@ export default function UsageBar() {
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
           Claude usage
+          {snapshot.stale && (
+            <span className="ml-1.5 normal-case tracking-normal text-amber-500/80" title={snapshot.reason ?? 'Rate-limited — showing last known values'}>
+              · stale
+            </span>
+          )}
         </span>
         {snapshot.plan && (
           <span className="rounded-full border border-neutral-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">

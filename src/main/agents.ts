@@ -1,7 +1,12 @@
 import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type {
+  Query,
+  SDKMessage,
+  SDKRateLimitInfo,
+  SDKUserMessage
+} from '@anthropic-ai/claude-agent-sdk'
 import { IPC } from '@shared/ipc-channels'
 import { parseBridgeMarkers } from '@shared/goalMarkers'
 import type { BridgeMarker } from '@shared/goalMarkers'
@@ -88,6 +93,8 @@ export interface AgentServiceHooks {
   onSettled?: () => void
   /** Mirror of every status change (team sync publishes these). */
   onStatus?: (summary: AgentSessionSummary) => void
+  /** Rate-limit info that rides along agent streams (free usage updates). */
+  onRateLimit?: (info: SDKRateLimitInfo) => void
   /** Appended to the initial task so agents know the check-bar protocol. */
   taskFooter?: (gameId: string) => string
   /** Applies a BRIDGE marker to GOALS.md; returns a transcript note. */
@@ -370,6 +377,14 @@ export class AgentService {
             const text = summarizeToolResult(block.content, block.is_error === true)
             if (text) this.push(record, 'tool-result', text)
           }
+        }
+        break
+      }
+      case 'rate_limit_event': {
+        try {
+          this.hooks.onRateLimit?.(message.rate_limit_info)
+        } catch {
+          // Usage harvesting must never break sessions.
         }
         break
       }
