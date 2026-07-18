@@ -166,12 +166,23 @@ export interface TeamRemoteSession {
   updatedAt: number
 }
 
+export interface TeamGameRef {
+  /** Normalized remote URL — the shared identity. */
+  key: string
+  name: string
+  /** Whether this machine has a local registry entry for it. */
+  linked: boolean
+  gameId: string | null
+}
+
 export interface TeamState {
   status: TeamStatus
   reason: string | null
   me: string | null
   users: TeamUserPresence[]
   sessions: TeamRemoteSession[]
+  /** Every game the team has registered anywhere, with local link status. */
+  games: TeamGameRef[]
 }
 
 export interface TeamNoteState {
@@ -257,6 +268,8 @@ export interface BridgeApi {
   teamDisconnect(): Promise<TeamState>
   getTeamState(): Promise<TeamState>
   setTeamFocus(gameId: string | null): Promise<void>
+  /** Adopt a team game on this machine: 'locate' an existing clone, or 'clone' fresh into a parent dir. */
+  linkTeamGame(key: string, mode: 'locate' | 'clone', path: string): Promise<Game>
   getTeamNote(gameId: string): Promise<TeamNoteState | null>
   saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
   gitStatus(gameId: string): Promise<GitRepoStatus>

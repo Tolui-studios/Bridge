@@ -56,6 +56,8 @@ const api: BridgeApi = {
   teamDisconnect: () => ipcRenderer.invoke(IPC.TeamDisconnect),
   getTeamState: () => ipcRenderer.invoke(IPC.TeamState),
   setTeamFocus: (gameId: string | null) => ipcRenderer.invoke(IPC.TeamFocus, gameId),
+  linkTeamGame: (key: string, mode: 'locate' | 'clone', path: string) =>
+    ipcRenderer.invoke(IPC.TeamLinkGame, key, mode, path),
   getTeamNote: (gameId: string) => ipcRenderer.invoke(IPC.TeamNoteGet, gameId),
   saveTeamNote: (gameId: string, content: string, baseVersion: number) =>
     ipcRenderer.invoke(IPC.TeamNoteSave, gameId, content, baseVersion),

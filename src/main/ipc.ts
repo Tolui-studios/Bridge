@@ -15,7 +15,7 @@ import type { SettingsStore } from './settings'
 import type { VaultService } from './vault'
 import type { TeamSync } from './teamSync'
 import type { WorktreeService } from './worktrees'
-import { pull, pushBranchForPr, repoStatus } from './gitOps'
+import { cloneRepo, normalizeRemoteKey, pull, pushBranchForPr, remoteUrl, repoStatus } from './gitOps'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -145,6 +145,29 @@ export function registerIpc(
   ipcMain.handle(IPC.TeamNoteGet, (_event, gameId: string) => team.getNote(requireGame(gameId)))
   ipcMain.handle(IPC.TeamNoteSave, (_event, gameId: string, content: string, baseVersion: number) =>
     team.saveNote(requireGame(gameId), content, baseVersion)
+  )
+
+  ipcMain.handle(
+    IPC.TeamLinkGame,
+    async (_event, key: string, mode: 'locate' | 'clone', pickedPath: string) => {
+      const teamGame = team.getTeamGame(key)
+      if (!teamGame) throw new Error('Unknown team game.')
+      let repoPath = pickedPath
+      if (mode === 'clone') {
+        const folderName = key.split('/').pop() ?? teamGame.name
+        repoPath = await cloneRepo(`https://${key}.git`, pickedPath, folderName)
+      }
+      const actualKey = normalizeRemoteKey(await remoteUrl(repoPath))
+      if (actualKey !== key) {
+        throw new Error(
+          `That folder's origin remote (${actualKey ?? 'none'}) doesn't match this team game (${key}).`
+        )
+      }
+      const result = registry.add({ name: teamGame.name, repoPath })
+      await team.afterLink(result.game)
+      broadcastRegistry()
+      return result.game
+    }
   )
 
   ipcMain.handle(IPC.GitStatus, (_event, gameId: string) => repoStatus(requireGame(gameId)))

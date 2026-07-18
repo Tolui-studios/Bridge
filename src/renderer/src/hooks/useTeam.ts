@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import type { TeamConnectInput, TeamState } from '@shared/types'
 import { cleanIpcError } from '../lib/ipcError'
 
-const OFFLINE: TeamState = { status: 'off', reason: null, me: null, users: [], sessions: [] }
+const OFFLINE: TeamState = {
+  status: 'off',
+  reason: null,
+  me: null,
+  users: [],
+  sessions: [],
+  games: []
+}
 
 export function useTeam(): {
   team: TeamState

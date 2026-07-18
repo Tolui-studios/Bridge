@@ -78,6 +78,8 @@ export class TeamSync {
   private users: TeamUserPresence[] = []
   private sessions = new Map<string, TeamRemoteSession>()
   private gameKeys = new Map<string, string | null>()
+  /** Shared game index: key (normalized remote) -> display name. */
+  private teamGames = new Map<string, string>()
 
   constructor(private readonly deps: TeamSyncDeps) {}
 
@@ -157,8 +159,45 @@ export class TeamSync {
       reason: this.reason,
       me: this.me,
       users: [...this.users],
-      sessions: [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+      sessions: [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt),
+      games: [...this.teamGames.entries()].map(([key, name]) => {
+        const gameId = this.gameIdForKey(key)
+        return { key, name, linked: gameId !== null, gameId }
+      })
     }
+  }
+
+  getTeamGame(key: string): { key: string; name: string } | null {
+    const name = this.teamGames.get(key)
+    return name ? { key, name } : null
+  }
+
+  /** Called after a team game gets a local registry entry on this machine. */
+  async afterLink(game: Game): Promise<void> {
+    this.gameKeys.delete(game.id)
+    const key = await this.keyFor(game)
+    if (key && this.status === 'online' && this.client) {
+      await this.ensureGameRow(key, game.name)
+      try {
+        const row = await this.fetchGoalsRow(key)
+        if (row) {
+          this.deps.goals.writeProjection(game, row.content)
+        } else {
+          const local = this.deps.goals.readRaw(game)
+          if (local) {
+            await this.client
+              .from('goals')
+              .insert({ game_key: key, content: local, version: 1, updated_by: this.me })
+          }
+        }
+      } catch {
+        // Goals adoption is best-effort; the next mutation reconciles.
+      }
+      for (const session of this.sessions.values()) {
+        if (session.gameKey === key) session.gameId = game.id
+      }
+    }
+    this.publishState()
   }
 
   // ---------------------------------------------------------------- presence
@@ -366,6 +405,7 @@ export class TeamSync {
     if (!this.client) return
     await this.resolveAllGameKeys()
     await this.registerGames()
+    await this.loadTeamGames()
     await this.loadInitialSessions()
     await this.pullAllGoals()
     // Await the channel's first outcome so connect() returns a truthful
@@ -403,7 +443,21 @@ export class TeamSync {
       channel.on('presence', { event: 'sync' }, () => {
         this.readPresence(channel)
         this.publishState()
+        // Fallback freshness for the shared game list (covers projects where
+        // the games table was not added to the realtime publication).
+        void this.loadTeamGames().then(() => this.publishState())
       })
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'games' },
+        (payload) => {
+          const row = payload.new as Partial<{ key: string; name: string }>
+          if (row?.key && row.name) {
+            this.teamGames.set(row.key, row.name)
+            this.publishState()
+          }
+        }
+      )
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'goals' },
@@ -496,6 +550,17 @@ export class TeamSync {
     this.publishState()
   }
 
+  private async loadTeamGames(): Promise<void> {
+    if (!this.client) return
+    try {
+      const { data } = await this.client.from('games').select('key,name')
+      const rows = (data ?? []) as { key: string; name: string }[]
+      this.teamGames = new Map(rows.map((row) => [row.key, row.name]))
+    } catch {
+      // Non-fatal.
+    }
+  }
+
   private async loadInitialSessions(): Promise<void> {
     if (!this.client) return
     try {
@@ -567,7 +632,7 @@ export class TeamSync {
 
   private async keyFor(game: Game): Promise<string | null> {
     if (this.gameKeys.has(game.id)) return this.gameKeys.get(game.id) ?? null
-    const key = normalizeRemoteKey(await remoteUrl(game))
+    const key = normalizeRemoteKey(await remoteUrl(game.repoPath))
     this.gameKeys.set(game.id, key)
     return key
   }
@@ -591,6 +656,7 @@ export class TeamSync {
     this.client = null
     this.users = []
     this.sessions.clear()
+    this.teamGames.clear()
     this.me = null
   }
 

@@ -48,14 +48,29 @@ export function parseAheadBehind(output: string): { ahead: number; behind: numbe
   return { ahead: Number(match[1]), behind: Number(match[2]) }
 }
 
-export async function remoteUrl(game: Game): Promise<string | null> {
+export async function remoteUrl(repoPath: string): Promise<string | null> {
   try {
-    const { stdout } = await git(game.repoPath, ['remote', 'get-url', 'origin'])
+    const { stdout } = await git(repoPath, ['remote', 'get-url', 'origin'])
     const url = stdout.trim()
     return url || null
   } catch {
     return null
   }
+}
+
+/** Clone `url` into `<parentDir>/<folderName>`; returns the new repo path. */
+export async function cloneRepo(url: string, parentDir: string, folderName: string): Promise<string> {
+  const dest = path.join(parentDir, folderName)
+  if (fs.existsSync(dest)) {
+    throw new Error(`Folder already exists: ${dest} — use Locate to link it instead.`)
+  }
+  try {
+    await execFileAsync('git', ['clone', url, dest], { windowsHide: true })
+  } catch (err) {
+    const anyErr = err as { stderr?: string; message?: string }
+    throw new Error((anyErr.stderr || anyErr.message || 'git clone failed').trim().slice(0, 400))
+  }
+  return dest
 }
 
 export async function repoStatus(game: Game): Promise<GitRepoStatus> {
@@ -112,7 +127,7 @@ export async function repoStatus(game: Game): Promise<GitRepoStatus> {
     // Never fetched.
   }
 
-  const remote = await remoteUrl(game)
+  const remote = await remoteUrl(game.repoPath)
   return {
     isRepo: true,
     branch,
@@ -141,7 +156,7 @@ export async function pull(game: Game): Promise<string> {
 
 /** Push a branch and return the GitHub compare URL for opening a PR. */
 export async function pushBranchForPr(game: Game, branch: string): Promise<string> {
-  const remote = await remoteUrl(game)
+  const remote = await remoteUrl(game.repoPath)
   const webUrl = toWebUrl(remote)
   if (!webUrl) throw new Error('This repo has no recognizable origin remote.')
   try {

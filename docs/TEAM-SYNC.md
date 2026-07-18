@@ -68,10 +68,15 @@ create policy "team all" on public.notes for all to authenticated using (true) w
 create policy "team all" on public.sessions for all to authenticated using (true) with check (true);
 
 -- Realtime change feeds.
+alter publication supabase_realtime add table public.games;
 alter publication supabase_realtime add table public.goals;
 alter publication supabase_realtime add table public.notes;
 alter publication supabase_realtime add table public.sessions;
 ```
+
+> **Already ran the SQL before the `games` line was added?** Run just this in the SQL editor:
+> `alter publication supabase_realtime add table public.games;`
+> (Without it, the shared game list still works — it refreshes when teammates join/leave instead of instantly.)
 
 ## 3. Turn off public signups
 

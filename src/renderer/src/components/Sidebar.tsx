@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import type { Game } from '@shared/types'
 import UsageBar from './UsageBar'
 import TeamBlock from './TeamBlock'
 import { useSettings } from '../hooks/useVault'
 import { useTeam } from '../hooks/useTeam'
+import { cleanIpcError } from '../lib/ipcError'
 
 interface Props {
   games: Game[]
@@ -52,6 +54,7 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
         {games.length === 0 && (
           <p className="px-2 py-3 text-xs text-neutral-600">No games registered yet.</p>
         )}
+        <TeamGamesSection />
       </nav>
       <TeamBlock />
       <VaultRow />
@@ -65,6 +68,69 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
         </button>
       </div>
     </aside>
+  )
+}
+
+/** Shared games this machine hasn't linked yet — locate a clone or clone fresh. */
+function TeamGamesSection() {
+  const { team } = useTeam()
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const unlinked = team.games.filter((g) => !g.linked)
+  if (team.status !== 'online' || unlinked.length === 0) return null
+
+  const link = (key: string, mode: 'locate' | 'clone'): void => {
+    setError(null)
+    void (async () => {
+      const picked = await window.bridge.pickFolder()
+      if (!picked) return
+      setBusyKey(key)
+      try {
+        await window.bridge.linkTeamGame(key, mode, picked)
+      } catch (err) {
+        setError(cleanIpcError(err))
+      } finally {
+        setBusyKey(null)
+      }
+    })()
+  }
+
+  return (
+    <div className="mt-3 border-t border-neutral-900 px-1 pt-2">
+      <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-600">
+        Team games
+      </p>
+      {unlinked.map((game) => (
+        <div key={game.key} className="rounded-md px-2 py-1.5 hover:bg-neutral-900/60">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-neutral-500">☁</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-neutral-400" title={game.key}>
+              {game.name}
+            </span>
+          </div>
+          <div className="mt-1 flex gap-1.5">
+            <button
+              onClick={() => link(game.key, 'locate')}
+              disabled={busyKey !== null}
+              title="Point at a folder where this repo is already cloned"
+              className="rounded border border-neutral-800 px-2 py-0.5 text-[10px] text-neutral-500 hover:border-neutral-600 hover:text-neutral-300 disabled:opacity-40"
+            >
+              Locate…
+            </button>
+            <button
+              onClick={() => link(game.key, 'clone')}
+              disabled={busyKey !== null}
+              title="Clone the repo from GitHub into a folder you pick"
+              className="rounded border border-neutral-800 px-2 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-800 hover:text-emerald-400 disabled:opacity-40"
+            >
+              {busyKey === game.key ? 'Working…' : 'Clone…'}
+            </button>
+          </div>
+        </div>
+      ))}
+      {error && <p className="mt-1 px-2 text-[10px] leading-snug text-red-400">{error}</p>}
+    </div>
   )
 }
 
