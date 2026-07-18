@@ -4,7 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { IPC } from '@shared/ipc-channels'
 import { parseGoals } from '@shared/goalsParser'
-import type { Game, GoalsState } from '@shared/types'
+import { mutateGoalsContent } from '@shared/goalsMutator'
+import type { Game, GoalsMutation, GoalsState } from '@shared/types'
 
 const template = (name: string): string =>
   [
@@ -59,9 +60,31 @@ export class GoalsService {
     const game = this.requireGame(gameId)
     const filePath = this.goalsPath(game)
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, template(game.name), 'utf8')
+      this.atomicWrite(filePath, template(game.name))
     }
     return this.readState(game)
+  }
+
+  /** Apply one UI-driven edit to GOALS.md (single-writer: only this process writes it). */
+  mutate(gameId: string, mutation: GoalsMutation): GoalsState {
+    const game = this.requireGame(gameId)
+    const filePath = this.goalsPath(game)
+    let raw: string
+    try {
+      raw = fs.readFileSync(filePath, 'utf8')
+    } catch {
+      throw new Error('GOALS.md does not exist yet. Create it from the template first.')
+    }
+    const result = mutateGoalsContent(raw, mutation)
+    if (!result.ok) throw new Error(result.error)
+    this.atomicWrite(filePath, result.content)
+    return this.readState(game)
+  }
+
+  private atomicWrite(filePath: string, content: string): void {
+    const tmp = `${filePath}.tmp`
+    fs.writeFileSync(tmp, content, 'utf8')
+    fs.renameSync(tmp, filePath)
   }
 
   /** Reconcile the watcher set against the current game list. */

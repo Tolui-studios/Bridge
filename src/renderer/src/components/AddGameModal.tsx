@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AddGameInput, Game, GameMutationResult } from '@shared/types'
+import { cleanIpcError } from '../lib/ipcError'
 
 interface Props {
   /** null = add mode; a Game = edit mode. */
@@ -12,10 +13,6 @@ interface Props {
 function basename(p: string): string {
   const parts = p.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] ?? ''
-}
-
-function cleanIpcError(message: string): string {
-  return message.replace(/^Error invoking remote method '[^']+': /, '').replace(/^Error: /, '')
 }
 
 export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
@@ -59,7 +56,7 @@ export default function AddGameModal({ initial, onClose, onSubmit }: Props) {
         onClose()
       }
     } catch (err) {
-      setError(cleanIpcError(err instanceof Error ? err.message : String(err)))
+      setError(cleanIpcError(err))
     } finally {
       setBusy(false)
     }

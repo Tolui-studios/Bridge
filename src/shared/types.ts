@@ -49,6 +49,21 @@ export interface Progress {
   pct: number
 }
 
+/**
+ * Surgical edits to a GOALS.md, applied line-by-line by the main process so
+ * any content outside the known sections survives untouched. Item mutations
+ * carry `expectText` (the parsed text the UI acted on) as a compare-and-swap
+ * guard against the file having changed on disk since the UI last read it.
+ */
+export type GoalsMutation =
+  | { kind: 'set-goal'; goal: string }
+  | { kind: 'set-phase'; phase: string }
+  | { kind: 'add-item'; text: string }
+  | { kind: 'toggle-item'; index: number; expectText: string; done: boolean }
+  | { kind: 'edit-item'; index: number; expectText: string; text: string }
+  | { kind: 'remove-item'; index: number; expectText: string }
+  | { kind: 'set-in-progress'; index: number | null; expectText?: string }
+
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
@@ -56,6 +71,8 @@ export interface BridgeApi {
   removeGame(id: string): Promise<void>
   getGoals(gameId: string): Promise<GoalsState>
   createGoalsTemplate(gameId: string): Promise<GoalsState>
+  mutateGoals(gameId: string, mutation: GoalsMutation): Promise<GoalsState>
+  openRepo(gameId: string): Promise<void>
   pickFolder(): Promise<string | null>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void

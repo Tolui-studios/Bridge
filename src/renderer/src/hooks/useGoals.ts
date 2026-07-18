@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { GoalsState } from '@shared/types'
+import type { GoalsMutation, GoalsState } from '@shared/types'
 
 export function useGoals(gameId: string | null): {
   state: GoalsState | null
   refresh: () => void
   createTemplate: () => void
+  mutate: (mutation: GoalsMutation) => Promise<void>
 } {
   const [state, setState] = useState<GoalsState | null>(null)
 
@@ -43,5 +44,14 @@ export function useGoals(gameId: string | null): {
       .catch(() => {})
   }, [gameId])
 
-  return { state, refresh, createTemplate }
+  const mutate = useCallback(
+    async (mutation: GoalsMutation): Promise<void> => {
+      if (!gameId) return
+      const next = await window.bridge.mutateGoals(gameId, mutation)
+      setState(next)
+    },
+    [gameId]
+  )
+
+  return { state, refresh, createTemplate, mutate }
 }

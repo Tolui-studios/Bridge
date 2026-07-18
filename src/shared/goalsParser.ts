@@ -1,13 +1,15 @@
 import type { ChecklistItem, GoalsDoc, Progress } from './types'
 
-const TITLE_RE = /^#\s+(.+)$/
-const GOAL_RE = /^>\s?(.*)$/
-const PHASE_RE = /^##\s*Phase:\s*(.+)$/i
-const CHECKLIST_HEADING_RE = /^##\s*Checklist\b/i
-const SECTION_HEADING_RE = /^##\s/
-const ITEM_RE = /^-\s+\[\s*([xX]?)\s*\]\s*(.*)$/
-const IN_PROGRESS_RE = /<!--\s*in-progress\s*-->\s*$/i
-const BOM_RE = /^﻿/
+// Shared with goalsMutator so parsing and mutating can never disagree on
+// what counts as a title/goal/phase/item line.
+export const TITLE_RE = /^#\s+(.+)$/
+export const GOAL_RE = /^>\s?(.*)$/
+export const PHASE_RE = /^##\s*Phase:\s*(.+)$/i
+export const CHECKLIST_HEADING_RE = /^##\s*Checklist\b/i
+export const SECTION_HEADING_RE = /^##\s/
+export const ITEM_RE = /^-\s+\[\s*([xX]?)\s*\]\s*(.*)$/
+export const IN_PROGRESS_RE = /<!--\s*in-progress\s*-->\s*$/i
+export const BOM_RE = /^﻿/
 
 /**
  * Parse a GOALS.md document. Pure and total: never throws, tolerates
