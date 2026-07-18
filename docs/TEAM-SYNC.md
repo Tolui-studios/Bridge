@@ -81,9 +81,13 @@ alter publication supabase_realtime add table public.sessions;
 
 **Authentication → Users → Add user** (email + password, auto-confirm on). 3 users, 5 users — same steps, same cost (free tier realtime limits are far above a small studio).
 
-## 5. Each teammate connects Bridge
+## 5. Bake the server into the build (once)
 
-Sidebar → **Team** → *Connect team sync* → paste the project URL + anon key, then their own email + password. The login persists; Bridge reconnects automatically on launch.
+Open `src/shared/teamDefaults.ts` and paste the Project URL + anon public key. Commit and push. The repo is private and the anon key is made to live in clients — the accounts + RLS are the security boundary, not this key.
+
+## 6. Each teammate signs in
+
+Sidebar → **Team** → *Sign in to team* → **email + password, nothing else.** The login persists; Bridge reconnects automatically on every launch. (An *Advanced* toggle in the sign-in dialog can still point one machine at a different server — useful for testing.)
 
 ## What syncs, what doesn't
 

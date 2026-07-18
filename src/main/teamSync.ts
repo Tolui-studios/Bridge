@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { IPC } from '@shared/ipc-channels'
+import { TEAM_DEFAULTS } from '@shared/teamDefaults'
 import { mutateGoalsContent } from '@shared/goalsMutator'
 import type {
   AgentSessionSummary,
@@ -106,8 +107,18 @@ export class TeamSync {
     await this.teardown()
     this.setStatus('connecting', null)
     try {
-      const url = input.url.trim().replace(/\/+$/, '')
-      const client = this.makeClient(url, input.anonKey.trim())
+      // Server resolution: explicit override → this machine's stored config →
+      // the studio defaults baked into the build. Teammates normally only
+      // ever type email + password.
+      const stored = this.deps.settings.getTeamConfig()
+      const url = (input.url?.trim() || stored?.url || TEAM_DEFAULTS.url).replace(/\/+$/, '')
+      const anonKey = input.anonKey?.trim() || stored?.anonKey || TEAM_DEFAULTS.anonKey
+      if (!url || !anonKey) {
+        throw new Error(
+          'No studio server configured. Paste the Supabase URL + anon key once into src/shared/teamDefaults.ts (see docs/TEAM-SYNC.md), or use the Advanced fields.'
+        )
+      }
+      const client = this.makeClient(url, anonKey)
       const { data, error } = await client.auth.signInWithPassword({
         email: input.email.trim(),
         password: input.password
@@ -117,7 +128,7 @@ export class TeamSync {
       }
       this.deps.settings.setTeamConfig({
         url,
-        anonKey: input.anonKey.trim(),
+        anonKey,
         email: input.email.trim()
       })
       this.client = client

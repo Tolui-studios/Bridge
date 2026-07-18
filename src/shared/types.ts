@@ -135,8 +135,9 @@ export interface AppSettings {
 }
 
 export interface TeamConnectInput {
-  url: string
-  anonKey: string
+  /** Optional overrides; omitted = stored config, then the baked-in studio defaults. */
+  url?: string
+  anonKey?: string
   email: string
   password: string
 }

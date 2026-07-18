@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { TeamState } from '@shared/types'
+import { TEAM_DEFAULTS } from '@shared/teamDefaults'
 import { useTeam } from '../hooks/useTeam'
+import { useSettings } from '../hooks/useVault'
 
 const STATUS_DOT: Record<TeamState['status'], string> = {
   off: 'bg-neutral-700',
@@ -52,7 +54,7 @@ export default function TeamBlock() {
             onClick={() => setModalOpen(true)}
             className="w-full rounded-md border border-dashed border-neutral-700 px-3 py-1.5 text-[11px] text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-300"
           >
-            {team.status === 'connecting' ? 'Connecting…' : 'Connect team sync'}
+            {team.status === 'connecting' ? 'Connecting…' : 'Sign in to team'}
           </button>
           {(team.reason || error) && (
             <p className="mt-1 text-[10px] leading-snug text-red-400" title={team.reason ?? error ?? ''}>
@@ -85,25 +87,35 @@ function ConnectModal({
 }: {
   onClose: () => void
   onConnect: (input: {
-    url: string
-    anonKey: string
+    url?: string
+    anonKey?: string
     email: string
     password: string
   }) => Promise<TeamState>
 }) {
+  const { settings } = useSettings()
+  // A server is already known when it's baked into the build or was used
+  // on this machine before — then teammates only need email + password.
+  const knownServer = Boolean(TEAM_DEFAULTS.url || settings?.teamUrl)
+  const [email, setEmail] = useState(settings?.teamEmail ?? '')
+  const [password, setPassword] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(!knownServer)
   const [url, setUrl] = useState('')
   const [anonKey, setAnonKey] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const submit = async (): Promise<void> => {
-    if (busy) return
+    if (busy || !email.trim() || !password) return
     setBusy(true)
     setError(null)
     try {
-      const state = await onConnect({ url, anonKey, email, password })
+      const state = await onConnect({
+        email,
+        password,
+        ...(url.trim() ? { url } : {}),
+        ...(anonKey.trim() ? { anonKey } : {})
+      })
       if (state.status !== 'online') setError(state.reason ?? 'Could not connect.')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -123,15 +135,19 @@ function ConnectModal({
       }}
     >
       <div className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-        <h3 className="text-lg font-semibold text-neutral-100">Connect team sync</h3>
+        <h3 className="text-lg font-semibold text-neutral-100">Sign in to your team</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          Your Supabase project's URL + anon key, and your team account. Setup guide:
-          docs/TEAM-SYNC.md in the Bridge repo.
+          {knownServer
+            ? 'Your studio account — the server is already configured.'
+            : 'First-time setup: this build has no studio server yet (see docs/TEAM-SYNC.md).'}
         </p>
         <div className="mt-5 space-y-3">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" className={field} />
-          <input value={anonKey} onChange={(e) => setAnonKey(e.target.value)} placeholder="anon public key" className={field} />
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@studio.com" className={field} />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@studio.com"
+            className={field}
+          />
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -142,6 +158,30 @@ function ConnectModal({
               if (e.key === 'Enter') void submit()
             }}
           />
+          {showAdvanced ? (
+            <div className="space-y-3 border-t border-neutral-800 pt-3">
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={settings?.teamUrl ?? TEAM_DEFAULTS.url ?? 'https://xxxx.supabase.co'}
+                title="Supabase project URL (leave blank to use the configured server)"
+                className={field}
+              />
+              <input
+                value={anonKey}
+                onChange={(e) => setAnonKey(e.target.value)}
+                placeholder={knownServer ? 'anon key (blank = configured key)' : 'anon public key'}
+                className={field}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAdvanced(true)}
+              className="text-[10px] text-neutral-600 hover:text-neutral-400"
+            >
+              Advanced: change server…
+            </button>
+          )}
         </div>
         {error && (
           <p className="mt-4 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
@@ -158,10 +198,10 @@ function ConnectModal({
           </button>
           <button
             onClick={() => void submit()}
-            disabled={busy || !url.trim() || !anonKey.trim() || !email.trim() || !password}
+            disabled={busy || !email.trim() || !password}
             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
           >
-            {busy ? 'Connecting…' : 'Connect'}
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </div>
       </div>
