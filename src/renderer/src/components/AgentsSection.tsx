@@ -7,13 +7,21 @@ import type {
 } from '@shared/types'
 import { useAgents } from '../hooks/useAgents'
 
-const TOOL_CHOICES = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebSearch', 'WebFetch']
-const DEFAULT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write']
+const SUBAGENT_PILL = 'Subagents'
+/** 'Agent' is the subagent tool in current Claude Code; 'Task' covers older CLIs. */
+const SUBAGENT_TOOL_NAMES = ['Agent', 'Task']
+const TOOL_CHOICES = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebSearch', 'WebFetch', SUBAGENT_PILL]
+const DEFAULT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', SUBAGENT_PILL]
+
+function expandTools(tools: string[]): string[] {
+  return tools.flatMap((tool) => (tool === SUBAGENT_PILL ? SUBAGENT_TOOL_NAMES : [tool]))
+}
 
 const MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'claude-sonnet-5', label: 'Sonnet 5' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
   { value: 'claude-opus-4-8', label: 'Opus 4.8' },
+  { value: 'claude-fable-5', label: 'Fable 5 (max cost)' },
   { value: '', label: 'Session default' }
 ]
 
@@ -25,36 +33,58 @@ const MODE_OPTIONS: { value: AgentPermissionMode; label: string; hint: string }[
 ]
 
 export default function AgentsSection({ game }: { game: Game }) {
-  const { sessions, activeId, setActiveId, transcript, start, cancel, error, clearError } =
-    useAgents(game.id)
+  const {
+    sessions,
+    activeId,
+    setActiveId,
+    transcript,
+    start,
+    cancel,
+    reprompt,
+    interrupt,
+    error,
+    clearError
+  } = useAgents(game.id)
   const [showForm, setShowForm] = useState(false)
 
-  const running = sessions.find((s) => s.status === 'running') ?? null
+  const live = sessions.find((s) => s.status === 'running' || s.status === 'idle') ?? null
   const active = sessions.find((s) => s.id === activeId) ?? null
-  const formOpen = !running && (showForm || sessions.length === 0)
+  const formOpen = !live && (showForm || sessions.length === 0)
 
   return (
     <section className="mt-10 border-t border-neutral-900 pt-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
           Agents
         </h3>
-        {!formOpen && !running && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
-          >
-            + New Agent
-          </button>
-        )}
-        {running && (
-          <button
-            onClick={() => cancel(running.id)}
-            className="rounded-md border border-red-900 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-950/40"
-          >
-            Cancel agent
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!formOpen && !live && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
+            >
+              + New Agent
+            </button>
+          )}
+          {live?.status === 'running' && (
+            <button
+              onClick={() => interrupt(live.id)}
+              title="Stop the current turn but keep the session alive for follow-ups"
+              className="rounded-md border border-amber-800 px-3 py-1.5 text-xs text-amber-300 transition-colors hover:bg-amber-950/40"
+            >
+              Interrupt
+            </button>
+          )}
+          {live && (
+            <button
+              onClick={() => cancel(live.id)}
+              title={live.status === 'running' ? 'Abort the turn and end the session' : 'End this idle session'}
+              className="rounded-md border border-red-900 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-950/40"
+            >
+              {live.status === 'running' ? 'Stop' : 'End session'}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -72,7 +102,7 @@ export default function AgentsSection({ game }: { game: Game }) {
             const ok = await start({
               task,
               permissionMode: mode,
-              allowedTools: tools,
+              allowedTools: expandTools(tools),
               ...(model ? { model } : {})
             })
             if (ok) setShowForm(false)
@@ -94,7 +124,17 @@ export default function AgentsSection({ game }: { game: Game }) {
         </ul>
       )}
 
-      {active && <Transcript items={transcript} runningTask={active.status === 'running'} />}
+      {active && (
+        <>
+          <Transcript items={transcript} running={active.status === 'running'} />
+          {(active.status === 'running' || active.status === 'idle') && (
+            <FollowUpRow
+              running={active.status === 'running'}
+              onSend={(text) => reprompt(active.id, text)}
+            />
+          )}
+        </>
+      )}
     </section>
   )
 }
@@ -177,6 +217,7 @@ function LaunchForm({
                   onClick={() =>
                     setTools((prev) => (on ? prev.filter((t) => t !== tool) : [...prev, tool]))
                   }
+                  title={tool === SUBAGENT_PILL ? 'Allow the agent to spawn subagents (Agent/Task tool)' : undefined}
                   className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                     on
                       ? 'border-emerald-600 bg-emerald-600/15 text-emerald-300'
@@ -203,6 +244,7 @@ function LaunchForm({
 
 const STATUS_STYLE: Record<AgentSessionSummary['status'], { dot: string; label: string }> = {
   running: { dot: 'bg-amber-400 animate-pulse', label: 'text-amber-300' },
+  idle: { dot: 'bg-sky-400', label: 'text-sky-300' },
   done: { dot: 'bg-emerald-500', label: 'text-emerald-400' },
   error: { dot: 'bg-red-500', label: 'text-red-400' },
   cancelled: { dot: 'bg-neutral-600', label: 'text-neutral-500' }
@@ -225,14 +267,13 @@ function SessionRow({
     <li>
       <button
         onClick={onSelect}
+        title={session.cwd ? `Workspace: ${session.cwd}` : session.task}
         className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors ${
           active ? 'bg-neutral-800/80' : 'hover:bg-neutral-900'
         }`}
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
-        <span className="min-w-0 flex-1 truncate text-xs text-neutral-300" title={session.task}>
-          {session.task}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">{session.task}</span>
         <span className={`shrink-0 text-[10px] uppercase tracking-wide ${style.label}`}>
           {session.status}
         </span>
@@ -244,6 +285,7 @@ function SessionRow({
 
 const KIND_STYLE: Record<AgentStreamItem['kind'], string> = {
   system: 'text-neutral-500',
+  user: 'text-emerald-200',
   text: 'text-neutral-200 whitespace-pre-wrap',
   tool: 'text-sky-300',
   'tool-result': 'text-neutral-500',
@@ -252,7 +294,7 @@ const KIND_STYLE: Record<AgentStreamItem['kind'], string> = {
   stderr: 'text-orange-300/90'
 }
 
-function Transcript({ items, runningTask }: { items: AgentStreamItem[]; runningTask: boolean }) {
+function Transcript({ items, running }: { items: AgentStreamItem[]; running: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -266,16 +308,61 @@ function Transcript({ items, runningTask }: { items: AgentStreamItem[]; runningT
       className="max-h-80 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed"
     >
       {items.length === 0 && (
-        <p className="text-neutral-600">{runningTask ? 'Waiting for the agent…' : 'No output.'}</p>
+        <p className="text-neutral-600">{running ? 'Waiting for the agent…' : 'No output.'}</p>
       )}
       {items.map((item) => (
         <p key={item.id} className={KIND_STYLE[item.kind]}>
+          {item.kind === 'user' && <span className="text-emerald-500">❯ </span>}
           {item.kind === 'tool' && <span className="text-sky-500">→ </span>}
           {item.kind === 'tool-result' && <span className="text-neutral-700">← </span>}
           {item.text}
         </p>
       ))}
-      {runningTask && <p className="animate-pulse text-neutral-600">▍</p>}
+      {running && <p className="animate-pulse text-neutral-600">▍</p>}
+    </div>
+  )
+}
+
+function FollowUpRow({
+  running,
+  onSend
+}: {
+  running: boolean
+  onSend: (text: string) => Promise<boolean>
+}) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const send = async (): Promise<void> => {
+    const trimmed = text.trim()
+    if (!trimmed || busy) return
+    setBusy(true)
+    try {
+      const ok = await onSend(trimmed)
+      if (ok) setText('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 flex gap-2">
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void send()
+        }}
+        placeholder={running ? 'Send a follow-up (queued until this turn ends)…' : 'Send a follow-up prompt…'}
+        className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-600"
+      />
+      <button
+        onClick={() => void send()}
+        disabled={!text.trim() || busy}
+        className="shrink-0 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-40"
+      >
+        Send
+      </button>
     </div>
   )
 }

@@ -4,11 +4,13 @@ import type { AddGameInput, AgentLaunchConfig, Game, GoalsMutation } from '@shar
 import type { GameRegistry } from './registry'
 import type { GoalsService } from './goals'
 import type { AgentService } from './agents'
+import type { UsageService } from './usage'
 
 export function registerIpc(
   registry: GameRegistry,
   goals: GoalsService,
-  agents: AgentService
+  agents: AgentService,
+  usage: UsageService
 ): void {
   const broadcastRegistry = (): void => {
     const games = registry.list()
@@ -67,7 +69,17 @@ export function registerIpc(
     agents.cancel(sessionId)
   })
 
+  ipcMain.handle(IPC.AgentsReprompt, (_event, sessionId: string, text: string) => {
+    agents.reprompt(sessionId, text)
+  })
+
+  ipcMain.handle(IPC.AgentsInterrupt, (_event, sessionId: string) => {
+    agents.interrupt(sessionId)
+  })
+
   ipcMain.handle(IPC.AgentsList, (_event, gameId: string) => agents.list(gameId))
 
   ipcMain.handle(IPC.AgentsTranscript, (_event, sessionId: string) => agents.transcript(sessionId))
+
+  ipcMain.handle(IPC.UsageGet, () => usage.get())
 }

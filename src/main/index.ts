@@ -5,6 +5,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { GameRegistry } from './registry'
 import { GoalsService } from './goals'
 import { AgentService } from './agents'
+import { WorktreeService } from './worktrees'
+import { UsageService } from './usage'
 import { registerIpc } from './ipc'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -47,6 +49,7 @@ if (!gotLock) {
 } else {
   let goals: GoalsService | null = null
   let agents: AgentService | null = null
+  let usage: UsageService | null = null
 
   void app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.toluistudios.bridge')
@@ -57,9 +60,11 @@ if (!gotLock) {
 
     const registry = new GameRegistry(join(app.getPath('userData'), 'registry.json'))
     goals = new GoalsService((id) => registry.get(id))
-    agents = new AgentService()
-    registerIpc(registry, goals, agents)
+    usage = new UsageService()
+    agents = new AgentService(new WorktreeService(), () => void usage?.refresh())
+    registerIpc(registry, goals, agents, usage)
     goals.syncWatchers(registry.list())
+    usage.start()
 
     createWindow()
 
@@ -77,6 +82,7 @@ if (!gotLock) {
   })
 
   app.on('before-quit', () => {
+    usage?.stop()
     agents?.closeAll()
     void goals?.closeAll()
   })

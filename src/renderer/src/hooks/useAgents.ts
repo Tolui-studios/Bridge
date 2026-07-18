@@ -9,6 +9,8 @@ export function useAgents(gameId: string): {
   transcript: AgentStreamItem[]
   start: (config: AgentLaunchConfig) => Promise<boolean>
   cancel: (sessionId: string) => void
+  reprompt: (sessionId: string, text: string) => Promise<boolean>
+  interrupt: (sessionId: string) => void
   error: string | null
   clearError: () => void
 } {
@@ -90,6 +92,21 @@ export function useAgents(gameId: string): {
     window.bridge.cancelAgent(sessionId).catch((err) => setError(cleanIpcError(err)))
   }, [])
 
+  const reprompt = useCallback(async (sessionId: string, text: string): Promise<boolean> => {
+    setError(null)
+    try {
+      await window.bridge.repromptAgent(sessionId, text)
+      return true
+    } catch (err) {
+      setError(cleanIpcError(err))
+      return false
+    }
+  }, [])
+
+  const interrupt = useCallback((sessionId: string): void => {
+    window.bridge.interruptAgent(sessionId).catch((err) => setError(cleanIpcError(err)))
+  }, [])
+
   return {
     sessions,
     activeId,
@@ -97,6 +114,8 @@ export function useAgents(gameId: string): {
     transcript: activeId ? (transcripts[activeId] ?? []) : [],
     start,
     cancel,
+    reprompt,
+    interrupt,
     error,
     clearError: () => setError(null)
   }

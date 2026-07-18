@@ -8,6 +8,6 @@
 
 - [x] Terrain blockout
 - [x] Spawn + checkpoint flow
-- [ ] Coin pickup loop <!-- in-progress -->
+- [ ] Coin pickup loop
 - [ ] First boss arena
 - [ ] Playtest with 3 friends

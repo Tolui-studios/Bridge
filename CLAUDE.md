@@ -4,7 +4,7 @@ Desktop mission-control app for a solo Roblox game studio (org: **Tolui-studios*
 
 - Full product brief and roadmap: `docs/BRIEF.md`
 - Current phase + live checklist: `GOALS.md` (repo root — Bridge dogfoods its own check-bar)
-- **Phase status: Phase 2 shipped (interactive goals editing + single agent per game via the Agent SDK). Next: Phase 3 — git worktree create/reuse so agents stop running directly in repo dirs.**
+- **Phase status: Phase 3 shipped (worktree isolation per agent, interactive sessions with follow-ups/interrupt, live usage meter). Next: Phase 4 — agent stream → GOALS.md auto-updates through the single writer.**
 
 ## Commands
 
@@ -22,7 +22,7 @@ Electron, ESM end-to-end (`"type": "module"`).
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/mutate/template (`goals.ts`), agent sessions via `@anthropic-ai/claude-agent-sdk` (`agents.ts` — spawn/stream/cancel, one running agent per game), IPC handlers + native dialogs + shell.openPath (`ipc.ts`). Owns ALL fs/process/SDK work. |
+| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/mutate/template (`goals.ts`), agent sessions via `@anthropic-ai/claude-agent-sdk` (`agents.ts` — streaming-input interactive sessions: follow-ups, interrupt, idle; one live agent per game), git worktree pool (`worktrees.ts` — electron-free, vitest-covered, `agent-<n>` dirs+branches under `worktreeRoot`, copies gitignored `CLAUDE.local.md` in), Claude usage polling (`usage.ts`), IPC handlers + dialogs + shell.openPath (`ipc.ts`). Owns ALL fs/process/SDK work. |
 | Preload | `src/preload/` | `contextBridge` exposure of `window.bridge` only — typed wrappers, zero logic. |
 | Renderer | `src/renderer/` | React 19 + Tailwind v4 dashboard. Never touches Node APIs; talks only through `window.bridge`. |
 | Shared | `src/shared/` | Types (`types.ts`), IPC channel constants (`ipc-channels.ts`), pure GOALS.md parser (`goalsParser.ts`, vitest-covered). |
@@ -38,7 +38,9 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
 3. **Parser stays pure and total:** `parseGoals` never throws, never touches fs; every behavior change gets a vitest case in `goalsParser.test.ts`.
 4. **Cross-platform paths:** always `node:path` joins, never hardcoded `/` or `\`, never `~`. GOALS.md is pinned LF via `.gitattributes`; the parser still normalizes CRLF on read.
 5. **ESM specifics:** preload must be referenced as `../preload/index.mjs` and requires `sandbox: false`; `contextIsolation` stays `true`, `nodeIntegration` stays `false`. Do not "fix" these.
-6. **Agent SDK stays external:** `@anthropic-ai/claude-agent-sdk` is listed in `rollupOptions.external` for the main build (it spawns its CLI relative to its own package path — inlining breaks it) and in electron-builder `asarUnpack`. The SDK spawns `node` from PATH; `bypassPermissions` is never exposed in the UI. Agent runs cost real money — the launch form defaults to Sonnet 5 because a session-default run can land on the most expensive tier (~$0.50 for a trivial turn, measured). `scripts/agent-smoke.mjs` is the cheap pipeline check.
+6. **Agent SDK stays external:** `@anthropic-ai/claude-agent-sdk` is listed in `rollupOptions.external` for the main build (it spawns its CLI relative to its own package path — inlining breaks it) and in electron-builder `asarUnpack`. The SDK spawns `node` from PATH; `bypassPermissions` is never exposed in the UI. Agent runs cost real money — the launch form defaults to Sonnet 5 because a session-default run can land on the most expensive tier (~$0.50 for a trivial Fable-5 turn, measured). Smoke checks: `scripts/agent-smoke.mjs` (one turn) and `scripts/agent-smoke-interactive.mjs` (two turns, one session, Haiku).
+7. **Agent workspace rules:** every agent gets a worktree under the game's `worktreeRoot` (sibling of the repo — never inside it) via `WorktreeService`; non-git game dirs fall back to the repo dir with a transcript note. `settingSources: ['user', 'project']` must stay in the query options — the SDK loads NO CLAUDE.md layers without it. Note the sample fixture sits inside Bridge's own repo, so Claude Code resolves Bridge as its project; real game repos (own `.git`) get their own workspace identity.
+8. **Usage meter:** `usage.ts` polls `api.anthropic.com/api/oauth/usage` (the same unofficial endpoint the CLI's /usage screen uses) with the machine's Claude Code OAuth token, parsing the `limits[]` array. It's not a public API — if it changes shape or 401s, the bar degrades to a reason string; never let it break anything else.
 
 ## Version pins — do not casually upgrade
 

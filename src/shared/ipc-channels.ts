@@ -10,9 +10,13 @@ export const IPC = {
   DialogPickFolder: 'bridge:dialog:pick-folder',
   AgentsStart: 'bridge:agents:start',
   AgentsCancel: 'bridge:agents:cancel',
+  AgentsReprompt: 'bridge:agents:reprompt',
+  AgentsInterrupt: 'bridge:agents:interrupt',
   AgentsList: 'bridge:agents:list',
   AgentsTranscript: 'bridge:agents:transcript',
+  UsageGet: 'bridge:usage:get',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
-  EvAgentEvent: 'bridge:event:agent-event'
+  EvAgentEvent: 'bridge:event:agent-event',
+  EvUsageChanged: 'bridge:event:usage-changed'
 } as const

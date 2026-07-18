@@ -8,7 +8,8 @@ import type {
   BridgeApi,
   Game,
   GoalsMutation,
-  GoalsState
+  GoalsState,
+  UsageSnapshot
 } from '../shared/types'
 
 function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void {
@@ -35,11 +36,16 @@ const api: BridgeApi = {
   startAgent: (gameId: string, config: AgentLaunchConfig) =>
     ipcRenderer.invoke(IPC.AgentsStart, gameId, config),
   cancelAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsCancel, sessionId),
+  repromptAgent: (sessionId: string, text: string) =>
+    ipcRenderer.invoke(IPC.AgentsReprompt, sessionId, text),
+  interruptAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsInterrupt, sessionId),
   listAgentSessions: (gameId: string) => ipcRenderer.invoke(IPC.AgentsList, gameId),
   getAgentTranscript: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsTranscript, sessionId),
+  getUsage: () => ipcRenderer.invoke(IPC.UsageGet),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
-  onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent)
+  onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent),
+  onUsageChanged: subscribe<UsageSnapshot>(IPC.EvUsageChanged)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)

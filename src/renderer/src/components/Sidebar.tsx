@@ -1,4 +1,5 @@
 import type { Game } from '@shared/types'
+import UsageBar from './UsageBar'
 
 interface Props {
   games: Game[]
@@ -36,6 +37,7 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
           <p className="px-2 py-3 text-xs text-neutral-600">No games registered yet.</p>
         )}
       </nav>
+      <UsageBar />
       <div className="border-t border-neutral-800 p-2">
         <button
           onClick={onAdd}

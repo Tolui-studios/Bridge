@@ -76,7 +76,8 @@ export interface AgentLaunchConfig {
   model?: string
 }
 
-export type AgentStatus = 'running' | 'done' | 'error' | 'cancelled'
+/** 'idle' = the session is alive and waiting for a follow-up prompt. */
+export type AgentStatus = 'running' | 'idle' | 'done' | 'error' | 'cancelled'
 
 export interface AgentSessionSummary {
   id: string
@@ -86,6 +87,8 @@ export interface AgentSessionSummary {
   permissionMode: AgentPermissionMode
   allowedTools: string[]
   model: string | null
+  /** Directory the agent actually runs in (worktree path, or repo on fallback). */
+  cwd: string | null
   startedAt: number
   endedAt: number | null
   costUsd: number | null
@@ -95,6 +98,7 @@ export interface AgentSessionSummary {
 
 export type AgentStreamKind =
   | 'system'
+  | 'user'
   | 'text'
   | 'tool'
   | 'tool-result'
@@ -115,6 +119,24 @@ export type AgentEvent =
   | { type: 'status'; session: AgentSessionSummary }
   | { type: 'item'; item: AgentStreamItem }
 
+export interface UsageWindow {
+  key: string
+  label: string
+  /** 0–100. */
+  percent: number
+  severity: string
+  resetsAt: string | null
+  active: boolean
+}
+
+export interface UsageSnapshot {
+  status: 'ok' | 'unavailable'
+  plan: string | null
+  windows: UsageWindow[]
+  fetchedAt: number
+  reason: string | null
+}
+
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
@@ -127,9 +149,13 @@ export interface BridgeApi {
   pickFolder(): Promise<string | null>
   startAgent(gameId: string, config: AgentLaunchConfig): Promise<AgentSessionSummary>
   cancelAgent(sessionId: string): Promise<void>
+  repromptAgent(sessionId: string, text: string): Promise<void>
+  interruptAgent(sessionId: string): Promise<void>
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
+  getUsage(): Promise<UsageSnapshot>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
+  onUsageChanged(cb: (snapshot: UsageSnapshot) => void): () => void
 }
