@@ -21,7 +21,7 @@ Full reference with pins: `docs/ROBLOX-STACK.md` in the Bridge repo. Toolchain: 
 - **Networking:** **ByteNet namespaces in `src/shared/Remotes/`**. Raw RemoteEvents/RemoteFunctions are banned.
 - **State/UI:** Reflex for state; React + React-Roblox 17 (jsdotlua) under `client/UI/` — App.luau plus Components/Context/Hooks/Theme/Views; Ripple for animation; UI-Labs stories in `src/stories/`.
 - **Utilities:** Trove for lifetime cleanup (one Trove per system, `:Clean()` on teardown), Signal for events, Observers for player/tag/attribute observation, Cmdr for admin commands (`server/Commands/`).
-- Packages come from Wally (`wally.toml`) and mount at `ReplicatedStorage.Packages`. The `Packages/` folder is gitignored and may be absent in your worktree — trust `wally.toml` for what exists. Add new Wally dependencies only when asked.
+- Packages come from Wally (`wally.toml`) and mount at `ReplicatedStorage.Packages`. Bridge installs the toolchain and `Packages/` into your workspace before you start — you never run `rokit`/`wally` yourself. If `Packages/` is missing anyway, say so instead of guessing package APIs. Add new Wally dependencies only when asked.
 
 ## Luau conventions
 

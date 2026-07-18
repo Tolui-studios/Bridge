@@ -12,6 +12,7 @@ import { UsageService } from './usage'
 import { SettingsStore } from './settings'
 import { VaultService } from './vault'
 import { TeamSync } from './teamSync'
+import { ToolchainService } from './toolchain'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
 import { registerIpc } from './ipc'
 
@@ -83,10 +84,12 @@ if (!gotLock) {
       getLiveAgentCount: () => agentsRef?.liveCount() ?? 0
     })
     goalsService.onExternalEdit = (game, raw) => void team.pushLocalEdit(game, raw)
+    const toolchain = new ToolchainService()
     agents = new AgentService(worktrees, new SessionStore(join(app.getPath('userData'), 'sessions')), {
       onSettled: () => void usage?.refresh(),
       onStatus: (summary) => team.publishSession(summary),
       onRateLimit: (info) => usage?.ingestRateLimit(info),
+      prepareWorkspace: (dir) => toolchain.setupRepo(dir),
       taskFooter: (gameId) => buildTaskFooter(goalsService, gameId),
       applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker),
       vaultContext: (_gameId, relPaths) => vault.buildContext(relPaths),
@@ -96,7 +99,7 @@ if (!gotLock) {
       }
     })
     agentsRef = agents
-    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees)
+    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain)
     goals.syncWatchers(registry.list())
     usage.start()
     void team.restore()

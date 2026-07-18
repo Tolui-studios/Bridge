@@ -101,6 +101,8 @@ export interface AgentServiceHooks {
   applyMarker?: (gameId: string, marker: BridgeMarker) => string
   /** Builds the prompt block for attached vault notes. */
   vaultContext?: (gameId: string, relPaths: string[]) => string
+  /** Installs toolchain + packages into the workspace before launch. */
+  prepareWorkspace?: (dir: string) => Promise<string[]>
   /** Writes a run summary (vault); returns a transcript note or null. */
   onRunEnded?: (summary: AgentSessionSummary, extras: RunExtras) => string | null
 }
@@ -287,6 +289,21 @@ export class AgentService {
       }
       record.summary.cwd = cwd
       this.emitStatus(record)
+
+      if (this.hooks.prepareWorkspace) {
+        this.push(record, 'system', 'preparing workspace (toolchain + packages)…')
+        try {
+          for (const note of await this.hooks.prepareWorkspace(cwd)) {
+            this.push(record, 'system', note)
+          }
+        } catch (err) {
+          this.push(
+            record,
+            'stderr',
+            `workspace preparation failed: ${err instanceof Error ? err.message : String(err)}`
+          )
+        }
+      }
 
       const footer = this.hooks.taskFooter?.(game.id) ?? ''
       let vaultBlock = ''

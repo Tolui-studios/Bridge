@@ -15,6 +15,7 @@ import type { SettingsStore } from './settings'
 import type { VaultService } from './vault'
 import type { TeamSync } from './teamSync'
 import type { WorktreeService } from './worktrees'
+import type { ToolchainService } from './toolchain'
 import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
 import {
   cloneRepo,
@@ -41,7 +42,8 @@ export function registerIpc(
   settings: SettingsStore,
   vault: VaultService,
   team: TeamSync,
-  worktrees: WorktreeService
+  worktrees: WorktreeService,
+  toolchain: ToolchainService
 ): void {
   const requireGame = (gameId: string): Game => {
     const game = registry.get(gameId)
@@ -100,6 +102,7 @@ export function registerIpc(
         `Repo initialized but the first commit failed: ${err instanceof Error ? err.message : String(err)}`
       )
     }
+    warnings.push(...(await toolchain.setupRepo(dir)))
     team.onGameAdded(result.game)
     broadcastRegistry()
     return { game: result.game, warnings }
@@ -239,6 +242,9 @@ export function registerIpc(
       const result = registry.add({ name: teamGame.name, repoPath })
       await team.afterLink(result.game)
       broadcastRegistry()
+      void toolchain.setupRepo(repoPath).then((notes) => {
+        for (const note of notes) console.log('[toolchain]', teamGame.name, '-', note)
+      })
       return result.game
     }
   )
