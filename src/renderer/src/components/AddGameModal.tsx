@@ -128,7 +128,7 @@ export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: P
                       : 'text-neutral-500 hover:text-neutral-300'
                   }`}
                 >
-                  Add existing repo
+                  Add existing project
                 </button>
               </div>
             )}
@@ -197,6 +197,13 @@ export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: P
                       />
                     </Field>
                   </div>
+                  {!editing && (
+                    <p className="rounded-md border border-neutral-800 bg-neutral-950/60 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+                      Projects without a GitHub remote get a private repo created in the studio
+                      org and pushed automatically, so teammates can see them. Projects already
+                      on GitHub are left untouched.
+                    </p>
+                  )}
                 </>
               )}
             </div>

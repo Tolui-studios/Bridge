@@ -101,6 +101,52 @@ export async function createGithubRepo(repoPath: string, org: string, slug: stri
   }
 }
 
+/**
+ * Make an existing local project shareable: init git if needed, guarantee a
+ * first commit, and create + push the private org repo — unless it already
+ * has an origin remote, in which case nothing is touched. Never throws;
+ * everything it did (or couldn't do) comes back as user-facing notes.
+ */
+export async function ensureOnGithub(
+  dir: string,
+  displayName: string,
+  org: string
+): Promise<string[]> {
+  const notes: string[] = []
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return notes
+    if (!fs.existsSync(path.join(dir, '.git'))) {
+      await execFileAsync('git', ['init', '-b', 'main', dir], { windowsHide: true })
+      notes.push('Initialized a git repo in this folder.')
+    }
+    if (await remoteUrl(dir)) return notes // already on a remote — leave it alone
+    try {
+      await git(dir, ['add', '-A'])
+      await git(dir, ['commit', '--allow-empty', '-m', 'chore: initial commit via Bridge'])
+    } catch (err) {
+      const anyErr = err as { stderr?: string; message?: string }
+      const detail = (anyErr.stderr || anyErr.message || '').trim().slice(0, 200)
+      // "nothing to commit" is fine (repo already had commits); anything else matters.
+      if (!/nothing to commit/i.test(detail)) {
+        notes.push(`Could not commit before uploading: ${detail}`)
+        return notes
+      }
+    }
+    const slug = repoSlug(displayName.trim() || path.basename(dir))
+    try {
+      await createGithubRepo(dir, org, slug)
+      notes.push(`Uploaded to GitHub: ${org}/${slug} (private). Teammates can now clone it from Team games.`)
+    } catch (err) {
+      notes.push(
+        `Not uploaded to GitHub: ${err instanceof Error ? err.message : String(err)}. Create ${org}/${slug} manually and add it as origin, or fix gh and re-add.`
+      )
+    }
+  } catch (err) {
+    notes.push(`GitHub upload skipped: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  return notes
+}
+
 /** Clone `url` into `<parentDir>/<folderName>`; returns the new repo path. */
 export async function cloneRepo(url: string, parentDir: string, folderName: string): Promise<string> {
   const dest = path.join(parentDir, folderName)

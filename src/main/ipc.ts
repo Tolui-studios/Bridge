@@ -20,6 +20,7 @@ import {
   cloneRepo,
   commitAll,
   createGithubRepo,
+  ensureOnGithub,
   initRepo,
   normalizeRemoteKey,
   pull,
@@ -56,8 +57,16 @@ export function registerIpc(
 
   ipcMain.handle(IPC.GamesList, () => registry.list())
 
-  ipcMain.handle(IPC.GamesAdd, (_event, input: AddGameInput) => {
+  ipcMain.handle(IPC.GamesAdd, async (_event, input: AddGameInput) => {
+    // Get the folder GitHub-ready BEFORE registering, so the registry's
+    // ".git missing" validation warning never fires for a repo we just made.
+    let ghNotes: string[] = []
+    const trimmedPath = (input.repoPath ?? '').trim()
+    if (trimmedPath) {
+      ghNotes = await ensureOnGithub(path.resolve(trimmedPath), input.name ?? '', STUDIO_GITHUB_ORG)
+    }
     const result = registry.add(input)
+    result.warnings.push(...ghNotes)
     team.onGameAdded(result.game)
     broadcastRegistry()
     return result
@@ -69,7 +78,7 @@ export function registerIpc(
     const slug = repoSlug(name)
     const dir = path.join(settings.ensureGamesRoot(), slug)
     if (fs.existsSync(dir)) {
-      throw new Error(`${dir} already exists — pick a different name or add it as an existing repo.`)
+      throw new Error(`${dir} already exists — pick a different name or add it as an existing project.`)
     }
     await initRepo(dir)
     const result = registry.add({ name, repoPath: dir })
