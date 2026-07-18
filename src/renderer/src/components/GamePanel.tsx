@@ -6,6 +6,7 @@ import { cleanIpcError } from '../lib/ipcError'
 import ProgressBar from './ProgressBar'
 import Checklist from './Checklist'
 import EditableText from './EditableText'
+import AgentsSection from './AgentsSection'
 
 interface Props {
   game: Game
@@ -184,6 +185,8 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
           </footer>
         </div>
       )}
+
+      <AgentsSection game={game} />
     </div>
   )
 }

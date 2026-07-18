@@ -64,6 +64,57 @@ export type GoalsMutation =
   | { kind: 'remove-item'; index: number; expectText: string }
   | { kind: 'set-in-progress'; index: number | null; expectText?: string }
 
+/** Permission modes Bridge exposes; `bypassPermissions` is deliberately excluded. */
+export type AgentPermissionMode = 'default' | 'acceptEdits' | 'plan' | 'dontAsk'
+
+export interface AgentLaunchConfig {
+  task: string
+  permissionMode: AgentPermissionMode
+  /** Tools auto-allowed without prompting; everything else is denied headlessly. */
+  allowedTools: string[]
+  /** Model id override; undefined = the machine's Claude Code session default. */
+  model?: string
+}
+
+export type AgentStatus = 'running' | 'done' | 'error' | 'cancelled'
+
+export interface AgentSessionSummary {
+  id: string
+  gameId: string
+  task: string
+  status: AgentStatus
+  permissionMode: AgentPermissionMode
+  allowedTools: string[]
+  model: string | null
+  startedAt: number
+  endedAt: number | null
+  costUsd: number | null
+  numTurns: number | null
+  error: string | null
+}
+
+export type AgentStreamKind =
+  | 'system'
+  | 'text'
+  | 'tool'
+  | 'tool-result'
+  | 'denied'
+  | 'result'
+  | 'stderr'
+
+export interface AgentStreamItem {
+  id: string
+  sessionId: string
+  gameId: string
+  ts: number
+  kind: AgentStreamKind
+  text: string
+}
+
+export type AgentEvent =
+  | { type: 'status'; session: AgentSessionSummary }
+  | { type: 'item'; item: AgentStreamItem }
+
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
@@ -74,6 +125,11 @@ export interface BridgeApi {
   mutateGoals(gameId: string, mutation: GoalsMutation): Promise<GoalsState>
   openRepo(gameId: string): Promise<void>
   pickFolder(): Promise<string | null>
+  startAgent(gameId: string, config: AgentLaunchConfig): Promise<AgentSessionSummary>
+  cancelAgent(sessionId: string): Promise<void>
+  listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
+  getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void
+  onAgentEvent(cb: (event: AgentEvent) => void): () => void
 }

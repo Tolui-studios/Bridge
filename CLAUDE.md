@@ -4,7 +4,7 @@ Desktop mission-control app for a solo Roblox game studio (org: **Tolui-studios*
 
 - Full product brief and roadmap: `docs/BRIEF.md`
 - Current phase + live checklist: `GOALS.md` (repo root — Bridge dogfoods its own check-bar)
-- **Phase status: Phase 1 (scaffold + registry + goals panel). No agent/SDK/worktree code exists yet.**
+- **Phase status: Phase 2 shipped (interactive goals editing + single agent per game via the Agent SDK). Next: Phase 3 — git worktree create/reuse so agents stop running directly in repo dirs.**
 
 ## Commands
 
@@ -22,7 +22,7 @@ Electron, ESM end-to-end (`"type": "module"`).
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/template (`goals.ts`), IPC handlers + native dialogs (`ipc.ts`). Owns ALL fs/process work. |
+| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/mutate/template (`goals.ts`), agent sessions via `@anthropic-ai/claude-agent-sdk` (`agents.ts` — spawn/stream/cancel, one running agent per game), IPC handlers + native dialogs + shell.openPath (`ipc.ts`). Owns ALL fs/process/SDK work. |
 | Preload | `src/preload/` | `contextBridge` exposure of `window.bridge` only — typed wrappers, zero logic. |
 | Renderer | `src/renderer/` | React 19 + Tailwind v4 dashboard. Never touches Node APIs; talks only through `window.bridge`. |
 | Shared | `src/shared/` | Types (`types.ts`), IPC channel constants (`ipc-channels.ts`), pure GOALS.md parser (`goalsParser.ts`, vitest-covered). |
@@ -33,11 +33,12 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
 
 ## Hard rules
 
-1. **Single-writer:** only the Electron main process writes any `GOALS.md` (Bridge's or a game's). Renderer and (future) agents never write it — agents report over the SDK stream and Bridge updates the file.
+1. **Single-writer:** only the Electron main process writes any `GOALS.md` (Bridge's or a game's). Renderer and agents never write it — agents report over the SDK stream and Bridge updates the file. Every UI-driven write goes through `GoalsService.mutate` → the pure `goalsMutator` (surgical line edits with `expectText` compare-and-swap; foreign markdown content is preserved verbatim).
 2. **Renderer purity:** no `fs`, no `child_process`, no Node APIs in `src/renderer/`. If the UI needs something new from the system, add an IPC channel: constant in `src/shared/ipc-channels.ts` → types in `src/shared/types.ts` (extend `BridgeApi`) → handler in `src/main/ipc.ts` → wrapper in `src/preload/index.ts`.
 3. **Parser stays pure and total:** `parseGoals` never throws, never touches fs; every behavior change gets a vitest case in `goalsParser.test.ts`.
 4. **Cross-platform paths:** always `node:path` joins, never hardcoded `/` or `\`, never `~`. GOALS.md is pinned LF via `.gitattributes`; the parser still normalizes CRLF on read.
 5. **ESM specifics:** preload must be referenced as `../preload/index.mjs` and requires `sandbox: false`; `contextIsolation` stays `true`, `nodeIntegration` stays `false`. Do not "fix" these.
+6. **Agent SDK stays external:** `@anthropic-ai/claude-agent-sdk` is listed in `rollupOptions.external` for the main build (it spawns its CLI relative to its own package path — inlining breaks it) and in electron-builder `asarUnpack`. The SDK spawns `node` from PATH; `bypassPermissions` is never exposed in the UI. Agent runs cost real money — the launch form defaults to Sonnet 5 because a session-default run can land on the most expensive tier (~$0.50 for a trivial turn, measured). `scripts/agent-smoke.mjs` is the cheap pipeline check.
 
 ## Version pins — do not casually upgrade
 

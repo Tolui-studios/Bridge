@@ -1,7 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { IPC } from '../shared/ipc-channels'
-import type { AddGameInput, BridgeApi, Game, GoalsMutation, GoalsState } from '../shared/types'
+import type {
+  AddGameInput,
+  AgentEvent,
+  AgentLaunchConfig,
+  BridgeApi,
+  Game,
+  GoalsMutation,
+  GoalsState
+} from '../shared/types'
 
 function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void {
   return (cb) => {
@@ -24,8 +32,14 @@ const api: BridgeApi = {
     ipcRenderer.invoke(IPC.GoalsMutate, gameId, mutation),
   openRepo: (gameId: string) => ipcRenderer.invoke(IPC.ShellOpenRepo, gameId),
   pickFolder: () => ipcRenderer.invoke(IPC.DialogPickFolder),
+  startAgent: (gameId: string, config: AgentLaunchConfig) =>
+    ipcRenderer.invoke(IPC.AgentsStart, gameId, config),
+  cancelAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsCancel, sessionId),
+  listAgentSessions: (gameId: string) => ipcRenderer.invoke(IPC.AgentsList, gameId),
+  getAgentTranscript: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsTranscript, sessionId),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
-  onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged)
+  onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
+  onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)

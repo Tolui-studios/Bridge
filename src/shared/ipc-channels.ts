@@ -8,6 +8,11 @@ export const IPC = {
   GoalsMutate: 'bridge:goals:mutate',
   ShellOpenRepo: 'bridge:shell:open-repo',
   DialogPickFolder: 'bridge:dialog:pick-folder',
+  AgentsStart: 'bridge:agents:start',
+  AgentsCancel: 'bridge:agents:cancel',
+  AgentsList: 'bridge:agents:list',
+  AgentsTranscript: 'bridge:agents:transcript',
   EvGoalsChanged: 'bridge:event:goals-changed',
-  EvRegistryChanged: 'bridge:event:registry-changed'
+  EvRegistryChanged: 'bridge:event:registry-changed',
+  EvAgentEvent: 'bridge:event:agent-event'
 } as const

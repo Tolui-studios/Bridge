@@ -1,17 +1,15 @@
 # Bridge — Current Goal
 
-> Stand up the Phase 1 dashboard: game registry + live GOALS.md check-bars.
+> Make goals editable in the app and run the first live agent inside a game.
 
-## Phase: 1 — Scaffold + registry
+## Phase: 2 — Interactive goals + single agent
 
 ## Checklist
 
-- [x] Repo hygiene (brief, CLAUDE.md, git config files)
-- [x] Toolchain (electron-vite + react + ts + tailwind + vitest)
-- [x] Minimal window boots
-- [x] Dark Tailwind shell
-- [x] GOALS.md parser + tests
-- [x] Game registry + sidebar
-- [x] Goals panel + live file watch
-- [x] Fixture + dogfood registration
-- [x] Windows installer builds
+- [x] Editable goal, phase, and checklist items via the UI
+- [x] Add and remove checklist items from the UI
+- [x] Open Folder button (File Explorer at repo path)
+- [x] Agent SDK service in main process (spawn, stream, cancel)
+- [x] Launch UI: task, permission mode, tool allowlist, model
+- [x] Live transcript in the game panel
+- [x] Smoke run: one real agent completes in the fixture game

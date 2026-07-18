@@ -1,10 +1,15 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc-channels'
-import type { AddGameInput, Game, GoalsMutation } from '@shared/types'
+import type { AddGameInput, AgentLaunchConfig, Game, GoalsMutation } from '@shared/types'
 import type { GameRegistry } from './registry'
 import type { GoalsService } from './goals'
+import type { AgentService } from './agents'
 
-export function registerIpc(registry: GameRegistry, goals: GoalsService): void {
+export function registerIpc(
+  registry: GameRegistry,
+  goals: GoalsService,
+  agents: AgentService
+): void {
   const broadcastRegistry = (): void => {
     const games = registry.list()
     goals.syncWatchers(games)
@@ -51,4 +56,18 @@ export function registerIpc(registry: GameRegistry, goals: GoalsService): void {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
+
+  ipcMain.handle(IPC.AgentsStart, (_event, gameId: string, config: AgentLaunchConfig) => {
+    const game = registry.get(gameId)
+    if (!game) throw new Error('Unknown game id.')
+    return agents.start(game, config)
+  })
+
+  ipcMain.handle(IPC.AgentsCancel, (_event, sessionId: string) => {
+    agents.cancel(sessionId)
+  })
+
+  ipcMain.handle(IPC.AgentsList, (_event, gameId: string) => agents.list(gameId))
+
+  ipcMain.handle(IPC.AgentsTranscript, (_event, sessionId: string) => agents.transcript(sessionId))
 }

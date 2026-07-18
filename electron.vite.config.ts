@@ -9,6 +9,14 @@ export default defineConfig({
       alias: {
         '@shared': resolve('src/shared')
       }
+    },
+    build: {
+      rollupOptions: {
+        // The Agent SDK must stay a real node_modules import: it locates and
+        // spawns its bundled CLI relative to its own file path, which breaks
+        // if it gets inlined into out/main.
+        external: ['@anthropic-ai/claude-agent-sdk']
+      }
     }
   },
   preload: {},

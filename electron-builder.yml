@@ -2,12 +2,17 @@ appId: com.toluistudios.bridge
 productName: Bridge
 directories:
   buildResources: build
+asarUnpack:
+  # The Agent SDK spawns a node subprocess pointed at files inside its own
+  # package dir; a child process cannot read from inside app.asar.
+  - node_modules/@anthropic-ai/claude-agent-sdk/**
 files:
   - '!**/.vscode/*'
   - '!.claude/*'
   - '!src/*'
   - '!fixtures/*'
   - '!docs/*'
+  - '!scripts/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
   - '!{.gitattributes,CLAUDE.md,GOALS.md,README.md}'
