@@ -4,7 +4,7 @@ Desktop mission-control app for a solo Roblox game studio (org: **Tolui-studios*
 
 - Full product brief and roadmap: `docs/BRIEF.md`
 - Current phase + live checklist: `GOALS.md` (repo root — Bridge dogfoods its own check-bar)
-- **Phase status: Phase 4 shipped (persistent session history + agents auto-update the check-bar via the BRIDGE marker protocol). Next: Phase 5 — Obsidian vault integration (read design notes into agent context, write decisions/run summaries back).**
+- **Phase status: Phase 5 shipped (Obsidian vault: notes into agent context, run summaries + decisions written back). Next: Phase 6 — cross-machine sync (likely solved by syncing the vault itself; registry/settings are per-machine by design).**
 
 ## Commands
 
@@ -42,6 +42,7 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
 7. **Agent workspace rules:** every agent gets a worktree under the game's `worktreeRoot` (sibling of the repo — never inside it) via `WorktreeService`; non-git game dirs fall back to the repo dir with a transcript note. `settingSources: ['user', 'project']` must stay in the query options — the SDK loads NO CLAUDE.md layers without it. Note the sample fixture sits inside Bridge's own repo, so Claude Code resolves Bridge as its project; real game repos (own `.git`) get their own workspace identity.
 8. **Check-bar protocol (Phase 4):** each launch appends a footer telling the agent to report progress with line-anchored markers — `BRIDGE:START <item>`, `BRIDGE:DONE <item>`, `BRIDGE:ADD <item>` (exact checklist text; current checklist included in the footer). `agents.ts` parses assistant text (`@shared/goalMarkers`), and `goalSync.ts` applies matches to the CANONICAL repo GOALS.md via `GoalsService.mutate` — single-writer preserved; the agent's worktree copy is never the source of truth. Matching is conservative (exact → normalized → unique containment; ambiguous = reported, not guessed).
 9. **Session history:** finished sessions persist to `%APPDATA%\Bridge\sessions\<gameId>\<sessionId>.json` via `sessionStore.ts` (summaries load at startup, transcripts lazily, newest 50 kept per game, dir deleted when a game is removed). Sessions found live on startup are coerced to `cancelled`.
+10. **Vault (Phase 5):** the Obsidian vault path is a per-machine setting (`settings.ts` → `%APPDATA%\Bridge\settings.json`). `vault.ts` is the ONLY writer of vault files (run summaries → `<game folder>/Bridge Log.md`, decisions → `Decisions.md`; folders matched to `game.name` case-insensitively, created if missing). Agents never get write access to the vault — selected notes are injected into the prompt as read-only content (8KB/note, 24KB total caps), sourced from the game's folder plus shared `knowledge`/`_studio` folders. All vault paths go through the traversal guard; `.obsidian` and dot-folders are excluded. `fixtures/demo-vault` exists for demos/tests.
 8. **Usage meter:** `usage.ts` polls `api.anthropic.com/api/oauth/usage` (the same unofficial endpoint the CLI's /usage screen uses) with the machine's Claude Code OAuth token, parsing the `limits[]` array. It's not a public API — if it changes shape or 401s, the bar degrades to a reason string; never let it break anything else.
 
 ## Version pins — do not casually upgrade

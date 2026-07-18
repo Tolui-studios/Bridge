@@ -8,6 +8,8 @@ import { AgentService } from './agents'
 import { WorktreeService } from './worktrees'
 import { SessionStore } from './sessionStore'
 import { UsageService } from './usage'
+import { SettingsStore } from './settings'
+import { VaultService } from './vault'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
 import { registerIpc } from './ipc'
 
@@ -63,6 +65,8 @@ if (!gotLock) {
     const registry = new GameRegistry(join(app.getPath('userData'), 'registry.json'))
     goals = new GoalsService((id) => registry.get(id))
     usage = new UsageService()
+    const settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
+    const vault = new VaultService(() => settings.get().vaultPath)
     const goalsService = goals
     agents = new AgentService(
       new WorktreeService(),
@@ -70,10 +74,15 @@ if (!gotLock) {
       {
         onSettled: () => void usage?.refresh(),
         taskFooter: (gameId) => buildTaskFooter(goalsService, gameId),
-        applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker)
+        applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker),
+        vaultContext: (_gameId, relPaths) => vault.buildContext(relPaths),
+        onRunEnded: (summary, extras) => {
+          const game = registry.get(summary.gameId)
+          return game ? vault.appendRunSummary(game, summary, extras) : null
+        }
       }
     )
-    registerIpc(registry, goals, agents, usage)
+    registerIpc(registry, goals, agents, usage, settings, vault)
     goals.syncWatchers(registry.list())
     usage.start()
 

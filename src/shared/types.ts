@@ -74,6 +74,8 @@ export interface AgentLaunchConfig {
   allowedTools: string[]
   /** Model id override; undefined = the machine's Claude Code session default. */
   model?: string
+  /** Vault-relative note paths whose content is injected into the task. */
+  vaultNotes?: string[]
 }
 
 /** 'idle' = the session is alive and waiting for a follow-up prompt. */
@@ -121,6 +123,23 @@ export type AgentEvent =
   | { type: 'status'; session: AgentSessionSummary }
   | { type: 'item'; item: AgentStreamItem }
 
+export interface AppSettings {
+  /** Absolute path of the studio Obsidian vault; null = not connected. */
+  vaultPath: string | null
+  /** Whether vaultPath currently exists on disk (computed at read time). */
+  vaultExists: boolean
+}
+
+export interface VaultNoteRef {
+  /** Path relative to the vault root (native separators). */
+  relPath: string
+  /** Note name without the .md extension. */
+  name: string
+  /** Top-level vault folder the note lives in. */
+  folder: string
+  size: number
+}
+
 export interface UsageWindow {
   key: string
   label: string
@@ -156,8 +175,14 @@ export interface BridgeApi {
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
   getUsage(): Promise<UsageSnapshot>
+  getSettings(): Promise<AppSettings>
+  setVaultPath(path: string | null): Promise<AppSettings>
+  listVaultNotes(gameId: string): Promise<VaultNoteRef[]>
+  openVault(): Promise<void>
+  logDecision(gameId: string, title: string, body: string): Promise<void>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
   onUsageChanged(cb: (snapshot: UsageSnapshot) => void): () => void
+  onSettingsChanged(cb: (settings: AppSettings) => void): () => void
 }

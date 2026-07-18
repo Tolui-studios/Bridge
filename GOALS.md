@@ -1,15 +1,16 @@
 # Bridge — Current Goal
 
-> Agents report their progress and the check-bar moves by itself.
+> The Obsidian vault feeds agents design context and receives the studio's history back.
 
-## Phase: 4 — Live check-bar
+## Phase: 5 — Vault integration
 
 ## Checklist
 
-- [x] Persist finished sessions to disk (survive app restarts)
-- [x] Lazy transcript loading + newest-50-per-game pruning
-- [x] Session history cleaned up when a game is removed
-- [x] BRIDGE:DONE / START / ADD marker protocol parsed from the agent stream
-- [x] Markers applied to GOALS.md through the single writer
-- [x] Protocol footer with the live checklist injected into each launch
-- [x] Marker, goal-sync, and session-store test suites
+- [x] Vault path setting with connect/change/disconnect in the sidebar
+- [x] Game-relevant note discovery (game folder + shared knowledge folders)
+- [x] Attach vault notes to an agent launch (content injected, size-capped)
+- [x] Run summaries auto-appended to each game's Bridge Log.md
+- [x] Log decision flow writing to Decisions.md
+- [x] Path-traversal guard + dot-folder exclusion
+- [x] Vault service test suite
+- [x] Demo vault in fixtures for instant try-out

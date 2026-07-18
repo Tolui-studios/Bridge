@@ -15,8 +15,14 @@ export const IPC = {
   AgentsList: 'bridge:agents:list',
   AgentsTranscript: 'bridge:agents:transcript',
   UsageGet: 'bridge:usage:get',
+  SettingsGet: 'bridge:settings:get',
+  SettingsSetVault: 'bridge:settings:set-vault',
+  VaultNotes: 'bridge:vault:notes',
+  VaultOpen: 'bridge:vault:open',
+  VaultLogDecision: 'bridge:vault:log-decision',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',
-  EvUsageChanged: 'bridge:event:usage-changed'
+  EvUsageChanged: 'bridge:event:usage-changed',
+  EvSettingsChanged: 'bridge:event:settings-changed'
 } as const

@@ -6,6 +6,7 @@ import type {
   Game
 } from '@shared/types'
 import { useAgents } from '../hooks/useAgents'
+import { useVaultNotes } from '../hooks/useVault'
 
 const SUBAGENT_PILL = 'Subagents'
 /** 'Agent' is the subagent tool in current Claude Code; 'Task' covers older CLIs. */
@@ -79,12 +80,14 @@ export default function AgentsSection({ game }: { game: Game }) {
 
       {formOpen && (
         <LaunchForm
-          onLaunch={async (task, mode, tools, model) => {
+          gameId={game.id}
+          onLaunch={async ({ task, mode, tools, model, vaultNotes }) => {
             const ok = await start({
               task,
               permissionMode: mode,
               allowedTools: expandTools(tools),
-              ...(model ? { model } : {})
+              ...(model ? { model } : {}),
+              ...(vaultNotes.length > 0 ? { vaultNotes } : {})
             })
             if (ok) setShowForm(false)
             return ok
@@ -163,28 +166,44 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+interface LaunchInput {
+  task: string
+  mode: AgentPermissionMode
+  tools: string[]
+  model: string
+  vaultNotes: string[]
+}
+
 function LaunchForm({
+  gameId,
   onLaunch
 }: {
-  onLaunch: (
-    task: string,
-    mode: AgentPermissionMode,
-    tools: string[],
-    model: string
-  ) => Promise<boolean>
+  gameId: string
+  onLaunch: (input: LaunchInput) => Promise<boolean>
 }) {
   const [task, setTask] = useState('')
   const [mode, setMode] = useState<AgentPermissionMode>('acceptEdits')
   const [tools, setTools] = useState<string[]>(DEFAULT_TOOLS)
   const [model, setModel] = useState<string>('claude-sonnet-5')
+  const [selectedNotes, setSelectedNotes] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const vaultNotes = useVaultNotes(gameId)
 
   const launch = async (): Promise<void> => {
     if (!task.trim() || busy) return
     setBusy(true)
     try {
-      const ok = await onLaunch(task.trim(), mode, tools, model)
-      if (ok) setTask('')
+      const ok = await onLaunch({
+        task: task.trim(),
+        mode,
+        tools,
+        model,
+        vaultNotes: selectedNotes
+      })
+      if (ok) {
+        setTask('')
+        setSelectedNotes([])
+      }
     } finally {
       setBusy(false)
     }
@@ -262,6 +281,36 @@ function LaunchForm({
           {busy ? 'Launching…' : 'Launch agent'}
         </button>
       </div>
+      {vaultNotes.length > 0 && (
+        <div className="flex items-start gap-2">
+          <span className="mt-1 shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Notes
+          </span>
+          <div className="flex max-h-20 flex-wrap gap-1 overflow-y-auto">
+            {vaultNotes.map((note) => {
+              const on = selectedNotes.includes(note.relPath)
+              return (
+                <button
+                  key={note.relPath}
+                  onClick={() =>
+                    setSelectedNotes((prev) =>
+                      on ? prev.filter((p) => p !== note.relPath) : [...prev, note.relPath]
+                    )
+                  }
+                  title={`${note.relPath} — attach this vault note to the agent's context`}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    on
+                      ? 'border-violet-500 bg-violet-500/15 text-violet-300'
+                      : 'border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300'
+                  }`}
+                >
+                  {note.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

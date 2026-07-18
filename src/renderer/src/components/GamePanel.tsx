@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import type { Game, GoalsMutation } from '@shared/types'
 import { progressOf } from '@shared/goalsParser'
 import { useGoals } from '../hooks/useGoals'
+import { useSettings } from '../hooks/useVault'
 import { cleanIpcError } from '../lib/ipcError'
 import ProgressBar from './ProgressBar'
 import Checklist from './Checklist'
@@ -16,8 +17,11 @@ interface Props {
 
 export default function GamePanel({ game, onEdit, onRemove }: Props) {
   const { state, refresh, createTemplate, mutate } = useGoals(game.id)
+  const { settings } = useSettings()
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionInfo, setActionInfo] = useState<string | null>(null)
+  const [decisionOpen, setDecisionOpen] = useState(false)
 
   const run = useCallback(
     async (mutation: GoalsMutation): Promise<void> => {
@@ -106,6 +110,18 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
         </div>
       )}
 
+      {actionInfo && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-emerald-900/50 bg-emerald-950/30 px-3 py-2">
+          <p className="text-xs text-emerald-300">{actionInfo}</p>
+          <button
+            onClick={() => setActionInfo(null)}
+            className="shrink-0 text-xs text-emerald-400/70 hover:text-emerald-300"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {state === null && <p className="text-sm text-neutral-500">Loading GOALS.md…</p>}
 
       {state?.status === 'missing' && (
@@ -172,21 +188,121 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
             }
             onAdd={(text) => run({ kind: 'add-item', text })}
           />
-          <footer className="flex items-center justify-between border-t border-neutral-900 pt-4">
+          <footer className="flex items-center justify-between gap-2 border-t border-neutral-900 pt-4">
             <span className="truncate font-mono text-[10px] text-neutral-700" title={state.path}>
               {state.path} · read {new Date(state.updatedAt).toLocaleTimeString()}
             </span>
-            <button
-              onClick={refresh}
-              className="shrink-0 rounded-md border border-neutral-800 px-3 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-900 hover:text-neutral-300"
-            >
-              Refresh
-            </button>
+            <span className="flex shrink-0 gap-2">
+              {settings?.vaultPath && (
+                <button
+                  onClick={() => setDecisionOpen(true)}
+                  title="Record a design decision in the vault's Decisions.md for this game"
+                  className="rounded-md border border-neutral-800 px-3 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-900 hover:text-neutral-300"
+                >
+                  Log decision
+                </button>
+              )}
+              <button
+                onClick={refresh}
+                className="rounded-md border border-neutral-800 px-3 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-900 hover:text-neutral-300"
+              >
+                Refresh
+              </button>
+            </span>
           </footer>
         </div>
       )}
 
       <AgentsSection game={game} />
+
+      {decisionOpen && (
+        <DecisionModal
+          onClose={() => setDecisionOpen(false)}
+          onSave={async (title, body) => {
+            await window.bridge.logDecision(game.id, title, body)
+            setDecisionOpen(false)
+            setActionInfo('Decision logged to the vault.')
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function DecisionModal({
+  onClose,
+  onSave
+}: {
+  onClose: () => void
+  onSave: (title: string, body: string) => Promise<void>
+}) {
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async (): Promise<void> => {
+    if (!title.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onSave(title.trim(), body)
+    } catch (err) {
+      setError(cleanIpcError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose()
+      }}
+    >
+      <div className="w-full max-w-lg rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
+        <h3 className="text-lg font-semibold text-neutral-100">Log a decision</h3>
+        <p className="mt-1 text-xs text-neutral-500">
+          Appends to this game&apos;s Decisions.md in the vault.
+        </p>
+        <div className="mt-5 space-y-4">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Decision title"
+            className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-600"
+          />
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={5}
+            placeholder="Why? Context, alternatives considered, consequences…"
+            className="w-full resize-y rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-600"
+          />
+        </div>
+        {error && (
+          <p className="mt-4 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+            {error}
+          </p>
+        )}
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void save()}
+            disabled={!title.trim() || busy}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+          >
+            {busy ? 'Saving…' : 'Save decision'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

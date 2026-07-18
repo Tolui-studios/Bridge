@@ -70,6 +70,17 @@ interface SessionRecord {
   query: Query | null
   claudeSessionId: string | null
   saveTimer: NodeJS.Timeout | null
+  /** Successful check-bar updates, for the vault run summary. */
+  goalNotes: string[]
+  lastText: string | null
+  lastResult: string | null
+}
+
+/** Session facts handed to the vault run-summary writer. */
+export interface RunExtras {
+  goalNotes: string[]
+  lastText: string | null
+  lastResult: string | null
 }
 
 export interface AgentServiceHooks {
@@ -79,6 +90,10 @@ export interface AgentServiceHooks {
   taskFooter?: (gameId: string) => string
   /** Applies a BRIDGE marker to GOALS.md; returns a transcript note. */
   applyMarker?: (gameId: string, marker: BridgeMarker) => string
+  /** Builds the prompt block for attached vault notes. */
+  vaultContext?: (gameId: string, relPaths: string[]) => string
+  /** Writes a run summary (vault); returns a transcript note or null. */
+  onRunEnded?: (summary: AgentSessionSummary, extras: RunExtras) => string | null
 }
 
 /**
@@ -110,7 +125,10 @@ export class AgentService {
         input: null,
         query: null,
         claudeSessionId: null,
-        saveTimer: null
+        saveTimer: null,
+        goalNotes: [],
+        lastText: null,
+        lastResult: null
       })
     }
   }
@@ -139,11 +157,14 @@ export class AgentService {
       input: new AsyncQueue<SDKUserMessage>(),
       query: null,
       claudeSessionId: null,
-      saveTimer: null
+      saveTimer: null,
+      goalNotes: [],
+      lastText: null,
+      lastResult: null
     }
     this.sessions.set(record.summary.id, record)
     this.emitStatus(record)
-    void this.run(record, game, task, record.input!, record.abort!)
+    void this.run(record, game, task, record.input!, record.abort!, config.vaultNotes ?? [])
     return { ...record.summary }
   }
 
@@ -229,7 +250,8 @@ export class AgentService {
     game: Game,
     task: string,
     input: AsyncQueue<SDKUserMessage>,
-    abort: AbortController
+    abort: AbortController,
+    vaultNotes: string[]
   ): Promise<void> {
     let leased = false
     try {
@@ -258,7 +280,16 @@ export class AgentService {
       this.emitStatus(record)
 
       const footer = this.hooks.taskFooter?.(game.id) ?? ''
-      input.push(userMessage(task + footer, null))
+      let vaultBlock = ''
+      if (vaultNotes.length > 0 && this.hooks.vaultContext) {
+        try {
+          vaultBlock = this.hooks.vaultContext(game.id, vaultNotes)
+          if (vaultBlock) this.push(record, 'system', `attached ${vaultNotes.length} vault note(s)`)
+        } catch (err) {
+          this.push(record, 'stderr', `vault notes failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      input.push(userMessage(task + footer + vaultBlock, null))
       const stream = query({
         prompt: input,
         options: {
@@ -320,6 +351,7 @@ export class AgentService {
       case 'assistant': {
         for (const block of message.message.content) {
           if (block.type === 'text' && block.text.trim()) {
+            record.lastText = block.text.trim()
             this.push(record, 'text', block.text.trim())
             this.applyMarkers(record, block.text)
           } else if (block.type === 'tool_use') {
@@ -342,11 +374,9 @@ export class AgentService {
       case 'result': {
         record.summary.costUsd = message.total_cost_usd
         record.summary.numTurns = message.num_turns
-        this.push(
-          record,
-          'result',
-          `${message.subtype} · ${message.num_turns} turns · $${message.total_cost_usd.toFixed(4)} · ${(message.duration_ms / 1000).toFixed(1)}s`
-        )
+        const resultLine = `${message.subtype} · ${message.num_turns} turns · $${message.total_cost_usd.toFixed(4)} · ${(message.duration_ms / 1000).toFixed(1)}s`
+        record.lastResult = resultLine
+        this.push(record, 'result', resultLine)
         if (message.is_error) {
           this.finish(record, 'error', message.subtype)
           record.input?.end()
@@ -368,7 +398,9 @@ export class AgentService {
     if (!this.hooks.applyMarker) return
     for (const marker of parseBridgeMarkers(text)) {
       try {
-        this.push(record, 'goal', this.hooks.applyMarker(record.summary.gameId, marker))
+        const note = this.hooks.applyMarker(record.summary.gameId, marker)
+        if (/^[✓→+]/.test(note)) record.goalNotes.push(note)
+        this.push(record, 'goal', note)
       } catch (err) {
         this.push(
           record,
@@ -385,6 +417,17 @@ export class AgentService {
     record.summary.endedAt = Date.now()
     record.summary.error = error
     this.emitStatus(record)
+    if ((status === 'done' || status === 'error') && this.hooks.onRunEnded) {
+      try {
+        const note = this.hooks.onRunEnded(
+          { ...record.summary },
+          { goalNotes: [...record.goalNotes], lastText: record.lastText, lastResult: record.lastResult }
+        )
+        if (note) this.push(record, 'system', note)
+      } catch (err) {
+        console.warn('[agents] vault run summary failed', err)
+      }
+    }
     this.persist(record)
     for (const removedId of this.store.prune(record.summary.gameId, KEEP_SESSIONS_PER_GAME)) {
       const removed = this.sessions.get(removedId)

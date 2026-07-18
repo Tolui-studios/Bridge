@@ -1,5 +1,6 @@
 import type { Game } from '@shared/types'
 import UsageBar from './UsageBar'
+import { useSettings } from '../hooks/useVault'
 
 interface Props {
   games: Game[]
@@ -37,6 +38,7 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
           <p className="px-2 py-3 text-xs text-neutral-600">No games registered yet.</p>
         )}
       </nav>
+      <VaultRow />
       <UsageBar />
       <div className="border-t border-neutral-800 p-2">
         <button
@@ -47,5 +49,56 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
         </button>
       </div>
     </aside>
+  )
+}
+
+function vaultBasename(p: string): string {
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? p
+}
+
+function VaultRow() {
+  const { settings, connectVault, disconnectVault, openVault, error } = useSettings()
+  if (!settings) return null
+  return (
+    <div className="border-t border-neutral-800 px-4 py-3">
+      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
+        Vault
+      </span>
+      {settings.vaultPath ? (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={openVault}
+            title={`${settings.vaultPath}${settings.vaultExists ? '' : ' (folder missing!)'} — click to open`}
+            className="min-w-0 flex-1 truncate text-left text-[11px] text-neutral-400 transition-colors hover:text-neutral-200"
+          >
+            {vaultBasename(settings.vaultPath)}
+            {!settings.vaultExists && <span className="text-red-400"> · missing</span>}
+          </button>
+          <button
+            onClick={() => void connectVault()}
+            title="Change vault folder"
+            className="shrink-0 rounded px-1 text-[11px] text-neutral-600 hover:bg-neutral-800 hover:text-neutral-300"
+          >
+            ✎
+          </button>
+          <button
+            onClick={() => void disconnectVault()}
+            title="Disconnect vault"
+            className="shrink-0 rounded px-1 text-[11px] text-neutral-600 hover:bg-neutral-800 hover:text-red-400"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => void connectVault()}
+          className="w-full rounded-md border border-dashed border-neutral-700 px-3 py-1.5 text-[11px] text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-300"
+        >
+          Connect Obsidian vault
+        </button>
+      )}
+      {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}
+    </div>
   )
 }

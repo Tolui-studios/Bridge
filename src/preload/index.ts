@@ -5,6 +5,7 @@ import type {
   AddGameInput,
   AgentEvent,
   AgentLaunchConfig,
+  AppSettings,
   BridgeApi,
   Game,
   GoalsMutation,
@@ -42,10 +43,17 @@ const api: BridgeApi = {
   listAgentSessions: (gameId: string) => ipcRenderer.invoke(IPC.AgentsList, gameId),
   getAgentTranscript: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsTranscript, sessionId),
   getUsage: () => ipcRenderer.invoke(IPC.UsageGet),
+  getSettings: () => ipcRenderer.invoke(IPC.SettingsGet),
+  setVaultPath: (path: string | null) => ipcRenderer.invoke(IPC.SettingsSetVault, path),
+  listVaultNotes: (gameId: string) => ipcRenderer.invoke(IPC.VaultNotes, gameId),
+  openVault: () => ipcRenderer.invoke(IPC.VaultOpen),
+  logDecision: (gameId: string, title: string, body: string) =>
+    ipcRenderer.invoke(IPC.VaultLogDecision, gameId, title, body),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
   onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent),
-  onUsageChanged: subscribe<UsageSnapshot>(IPC.EvUsageChanged)
+  onUsageChanged: subscribe<UsageSnapshot>(IPC.EvUsageChanged),
+  onSettingsChanged: subscribe<AppSettings>(IPC.EvSettingsChanged)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)
