@@ -1,18 +1,15 @@
 # Bridge — Current Goal
 
-> Multiple operators run the studio together, live, without stepping on each other.
+> Every agent in every game speaks fluent Roblox without being retaught.
 
-## Phase: 6 — Team sync (multi-operator)
+## Phase: 7 — Roblox-native
 
 ## Checklist
 
-- [x] Supabase team layer: auth, presence channel, realtime tables
-- [x] Presence: who is on which project (sidebar chips + occupancy banner)
-- [x] Goals canon moves to the team when synced (GOALS.md becomes a local projection)
-- [x] Shared per-project team note, live-edited by any teammate
-- [x] Teammates' agent sessions visible per game
-- [x] Per-user agent branch prefixes (no push collisions)
-- [x] Repo bar: pull, last-pulled, ahead/behind, dirty count
-- [x] Worktree list with remove + Create PR buttons
-- [x] Setup guide with full SQL (docs/TEAM-SYNC.md)
-- [ ] Live two-user verification against a real Supabase project <!-- in-progress -->
+- [x] Studio-wide Roblox/Luau/Rojo conventions (docs/GLOBAL-CLAUDE.md → ~/.claude/CLAUDE.md)
+- [x] New games scaffold a full Rojo project (project.json, src tree, strict Luau starters)
+- [x] Per-game CLAUDE.md template seeded with structure map + Bridge rules
+- [x] StyLua + Selene configs baked into every new game
+- [x] Roblox .gitignore for new games
+- [ ] Global conventions installed on the Mac <!-- in-progress -->
+- [ ] First real game created and verified end-to-end

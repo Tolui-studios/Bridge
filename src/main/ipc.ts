@@ -31,6 +31,7 @@ import {
 } from './gitOps'
 import path from 'node:path'
 import fs from 'node:fs'
+import { scaffoldRobloxGame } from './robloxScaffold'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -81,6 +82,7 @@ export function registerIpc(
       throw new Error(`${dir} already exists — pick a different name or add it as an existing project.`)
     }
     await initRepo(dir)
+    scaffoldRobloxGame(dir, name, slug)
     const result = registry.add({ name, repoPath: dir })
     goals.createTemplate(result.game.id)
     const warnings: string[] = []
