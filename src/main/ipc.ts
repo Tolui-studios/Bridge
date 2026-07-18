@@ -81,7 +81,10 @@ export function registerIpc(
   })
 
   ipcMain.handle(IPC.DialogPickFolder, async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      defaultPath: settings.ensureGamesRoot()
+    })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
 
@@ -117,6 +120,19 @@ export function registerIpc(
       win.webContents.send(IPC.EvSettingsChanged, next)
     }
     return next
+  })
+
+  ipcMain.handle(IPC.SettingsSetGamesRoot, (_event, gamesRoot: string | null) => {
+    const next = settings.setGamesRoot(gamesRoot)
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(IPC.EvSettingsChanged, next)
+    }
+    return next
+  })
+
+  ipcMain.handle(IPC.SettingsOpenGamesRoot, async () => {
+    const error = await shell.openPath(settings.ensureGamesRoot())
+    if (error) throw new Error(`Could not open games folder: ${error}`)
   })
 
   ipcMain.handle(IPC.VaultNotes, (_event, gameId: string) => {
@@ -155,7 +171,8 @@ export function registerIpc(
       let repoPath = pickedPath
       if (mode === 'clone') {
         const folderName = key.split('/').pop() ?? teamGame.name
-        repoPath = await cloneRepo(`https://${key}.git`, pickedPath, folderName)
+        const parentDir = pickedPath.trim() || settings.ensureGamesRoot()
+        repoPath = await cloneRepo(`https://${key}.git`, parentDir, folderName)
       }
       const actualKey = normalizeRemoteKey(await remoteUrl(repoPath))
       if (actualKey !== key) {

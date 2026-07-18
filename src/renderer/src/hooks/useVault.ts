@@ -7,6 +7,8 @@ export function useSettings(): {
   connectVault: () => Promise<void>
   disconnectVault: () => Promise<void>
   openVault: () => void
+  changeGamesRoot: () => Promise<void>
+  openGamesRoot: () => void
   error: string | null
 } {
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -48,7 +50,22 @@ export function useSettings(): {
     window.bridge.openVault().catch((err) => setError(cleanIpcError(err)))
   }, [])
 
-  return { settings, connectVault, disconnectVault, openVault, error }
+  const changeGamesRoot = useCallback(async (): Promise<void> => {
+    setError(null)
+    try {
+      const picked = await window.bridge.pickFolder()
+      if (!picked) return
+      setSettings(await window.bridge.setGamesRoot(picked))
+    } catch (err) {
+      setError(cleanIpcError(err))
+    }
+  }, [])
+
+  const openGamesRoot = useCallback((): void => {
+    window.bridge.openGamesRoot().catch((err) => setError(cleanIpcError(err)))
+  }, [])
+
+  return { settings, connectVault, disconnectVault, openVault, changeGamesRoot, openGamesRoot, error }
 }
 
 export function useVaultNotes(gameId: string): VaultNoteRef[] {

@@ -68,6 +68,7 @@ if (!gotLock) {
     goals = new GoalsService((id) => registry.get(id))
     usage = new UsageService()
     const settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
+    settings.ensureGamesRoot()
     const vault = new VaultService(() => settings.get().vaultPath)
     const goalsService = goals
     const userSlug = os.userInfo().username.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'user'

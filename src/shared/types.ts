@@ -128,6 +128,8 @@ export interface AppSettings {
   vaultPath: string | null
   /** Whether vaultPath currently exists on disk (computed at read time). */
   vaultExists: boolean
+  /** The folder all games live in (clones land here; pickers start here). */
+  gamesRoot: string
   /** Team sync (Supabase) config presence — the key itself never leaves main. */
   teamConfigured: boolean
   teamUrl: string | null
@@ -269,6 +271,9 @@ export interface BridgeApi {
   getUsage(): Promise<UsageSnapshot>
   getSettings(): Promise<AppSettings>
   setVaultPath(path: string | null): Promise<AppSettings>
+  /** null = reset to the default (~/BridgeGames). */
+  setGamesRoot(path: string | null): Promise<AppSettings>
+  openGamesRoot(): Promise<void>
   listVaultNotes(gameId: string): Promise<VaultNoteRef[]>
   openVault(): Promise<void>
   logDecision(gameId: string, title: string, body: string): Promise<void>

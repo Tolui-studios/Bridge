@@ -83,8 +83,14 @@ function TeamGamesSection() {
   const link = (key: string, mode: 'locate' | 'clone'): void => {
     setError(null)
     void (async () => {
-      const picked = await window.bridge.pickFolder()
-      if (!picked) return
+      // Locate needs the user to point at the existing clone; Clone goes
+      // straight into the games folder with no picker.
+      let picked = ''
+      if (mode === 'locate') {
+        const chosen = await window.bridge.pickFolder()
+        if (!chosen) return
+        picked = chosen
+      }
       setBusyKey(key)
       try {
         await window.bridge.linkTeamGame(key, mode, picked)
@@ -121,10 +127,10 @@ function TeamGamesSection() {
             <button
               onClick={() => link(game.key, 'clone')}
               disabled={busyKey !== null}
-              title="Clone the repo from GitHub into a folder you pick"
+              title="Clone the repo from GitHub into your games folder"
               className="rounded border border-neutral-800 px-2 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-800 hover:text-emerald-400 disabled:opacity-40"
             >
-              {busyKey === game.key ? 'Working…' : 'Clone…'}
+              {busyKey === game.key ? 'Cloning…' : 'Clone'}
             </button>
           </div>
         </div>
@@ -140,10 +146,30 @@ function vaultBasename(p: string): string {
 }
 
 function VaultRow() {
-  const { settings, connectVault, disconnectVault, openVault, error } = useSettings()
+  const { settings, connectVault, disconnectVault, openVault, changeGamesRoot, openGamesRoot, error } =
+    useSettings()
   if (!settings) return null
   return (
     <div className="border-t border-neutral-800 px-4 py-3">
+      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
+        Games folder
+      </span>
+      <div className="mb-3 flex items-center gap-1.5">
+        <button
+          onClick={openGamesRoot}
+          title={`${settings.gamesRoot} — cloned team games land here; click to open`}
+          className="min-w-0 flex-1 truncate text-left text-[11px] text-neutral-400 transition-colors hover:text-neutral-200"
+        >
+          {vaultBasename(settings.gamesRoot)}
+        </button>
+        <button
+          onClick={() => void changeGamesRoot()}
+          title="Change the games folder"
+          className="shrink-0 rounded px-1 text-[11px] text-neutral-600 hover:bg-neutral-800 hover:text-neutral-300"
+        >
+          ✎
+        </button>
+      </div>
       <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
         Vault
       </span>

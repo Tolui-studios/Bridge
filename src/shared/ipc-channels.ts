@@ -17,6 +17,8 @@ export const IPC = {
   UsageGet: 'bridge:usage:get',
   SettingsGet: 'bridge:settings:get',
   SettingsSetVault: 'bridge:settings:set-vault',
+  SettingsSetGamesRoot: 'bridge:settings:set-games-root',
+  SettingsOpenGamesRoot: 'bridge:settings:open-games-root',
   VaultNotes: 'bridge:vault:notes',
   VaultOpen: 'bridge:vault:open',
   VaultLogDecision: 'bridge:vault:log-decision',
