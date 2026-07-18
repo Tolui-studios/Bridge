@@ -83,11 +83,30 @@ export async function commitAll(repoPath: string, message: string): Promise<void
   await git(repoPath, ['commit', '-m', message])
 }
 
+/**
+ * Locate the GitHub CLI from its standard install locations before falling
+ * back to PATH — a long-running Electron process inherits a PATH captured at
+ * launch, so a gh installed later is invisible to plain `execFile('gh')`.
+ */
+export function ghExecutable(): string {
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'GitHub CLI', 'gh.exe'),
+          path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'GitHub CLI', 'gh.exe')
+        ]
+      : ['/opt/homebrew/bin/gh', '/usr/local/bin/gh']
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate
+  }
+  return 'gh'
+}
+
 /** Create the private org repo, wire it as origin, and push (needs gh CLI, authed). */
 export async function createGithubRepo(repoPath: string, org: string, slug: string): Promise<void> {
   try {
     await execFileAsync(
-      'gh',
+      ghExecutable(),
       ['repo', 'create', `${org}/${slug}`, '--private', '--source', repoPath, '--remote', 'origin', '--push'],
       { windowsHide: true }
     )
@@ -95,7 +114,7 @@ export async function createGithubRepo(repoPath: string, org: string, slug: stri
     const anyErr = err as { stderr?: string; message?: string; code?: string }
     const detail =
       anyErr.code === 'ENOENT'
-        ? 'the GitHub CLI (gh) is not installed'
+        ? 'the GitHub CLI (gh) is not installed (checked Program Files and PATH)'
         : (anyErr.stderr || anyErr.message || 'gh failed').trim().slice(0, 300)
     throw new Error(detail)
   }
