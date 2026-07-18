@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { TeamState } from '@shared/types'
 import { TEAM_DEFAULTS } from '@shared/teamDefaults'
 import { useTeam } from '../hooks/useTeam'
@@ -15,6 +15,12 @@ const STATUS_DOT: Record<TeamState['status'], string> = {
 export default function TeamBlock() {
   const { team, connect, disconnect, error, clearError } = useTeam()
   const [modalOpen, setModalOpen] = useState(false)
+
+  // However we got online (including a slow channel racing the modal),
+  // the sign-in dialog has no business staying open.
+  useEffect(() => {
+    if (team.status === 'online') setModalOpen(false)
+  }, [team.status])
 
   return (
     <div className="border-t border-neutral-800 px-4 py-3">

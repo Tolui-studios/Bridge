@@ -368,44 +368,74 @@ export class TeamSync {
     await this.registerGames()
     await this.loadInitialSessions()
     await this.pullAllGoals()
-    this.openChannel()
+    // Await the channel's first outcome so connect() returns a truthful
+    // final status instead of racing the subscription (the "could not
+    // connect but actually signed in" bug).
+    await this.openChannel()
   }
 
-  private openChannel(): void {
-    if (!this.client) return
-    const channel = this.client.channel('bridge-team', {
-      config: { presence: { key: this.me ?? 'unknown' } }
-    })
-    channel.on('presence', { event: 'sync' }, () => {
-      this.readPresence(channel)
-      this.publishState()
-    })
-    channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'goals' },
-      (payload) => void this.onGoalsChange(payload.new as Partial<GoalsRow>)
-    )
-    channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'notes' },
-      (payload) => this.onNoteChange(payload.new as Partial<NoteRow>)
-    )
-    channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'sessions' },
-      (payload) => this.onSessionChange(payload.new as Partial<SessionRow>)
-    )
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        this.setStatus('online', null)
-        void this.trackPresence()
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        this.setStatus('error', `Realtime channel ${status.toLowerCase().replace('_', ' ')}.`)
-      } else if (status === 'CLOSED' && this.status === 'online') {
-        this.setStatus('connecting', 'Reconnecting…')
+  private openChannel(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.client) {
+        resolve()
+        return
       }
+      let settled = false
+      const settle = (): void => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          resolve()
+        }
+      }
+      const timer = setTimeout(() => {
+        if (!settled) {
+          this.setStatus(
+            'error',
+            'Realtime channel timed out — verify the SQL setup from docs/TEAM-SYNC.md ran on this project.'
+          )
+          settle()
+        }
+      }, 10_000)
+      const channel = this.client.channel('bridge-team', {
+        config: { presence: { key: this.me ?? 'unknown' } }
+      })
+      channel.on('presence', { event: 'sync' }, () => {
+        this.readPresence(channel)
+        this.publishState()
+      })
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'goals' },
+        (payload) => void this.onGoalsChange(payload.new as Partial<GoalsRow>)
+      )
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notes' },
+        (payload) => this.onNoteChange(payload.new as Partial<NoteRow>)
+      )
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sessions' },
+        (payload) => this.onSessionChange(payload.new as Partial<SessionRow>)
+      )
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          this.setStatus('online', null)
+          void this.trackPresence()
+          settle()
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          this.setStatus(
+            'error',
+            `Realtime channel ${status.toLowerCase().replace('_', ' ')} — verify the SQL setup from docs/TEAM-SYNC.md (realtime publication included).`
+          )
+          settle()
+        } else if (status === 'CLOSED' && this.status === 'online') {
+          this.setStatus('connecting', 'Reconnecting…')
+        }
+      })
+      this.channel = channel
     })
-    this.channel = channel
   }
 
   private async trackPresence(): Promise<void> {
