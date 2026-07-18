@@ -23,6 +23,7 @@ import {
   createGithubRepo,
   ensureOnGithub,
   initRepo,
+  moveRepoToOrg,
   normalizeRemoteKey,
   pull,
   pushBranchForPr,
@@ -266,6 +267,14 @@ export function registerIpc(
   ipcMain.handle(IPC.GitCreatePr, async (_event, gameId: string, branch: string) => {
     const url = await pushBranchForPr(requireGame(gameId), branch)
     void shell.openExternal(url)
+    return url
+  })
+
+  ipcMain.handle(IPC.GitMoveToOrg, async (_event, gameId: string) => {
+    const game = requireGame(gameId)
+    const url = await moveRepoToOrg(game, STUDIO_GITHUB_ORG, repoSlug(game.name))
+    // The shared identity changed — re-key, re-register, and re-sync goals.
+    await team.afterLink(game)
     return url
   })
 }

@@ -36,6 +36,7 @@ export const IPC = {
   GitWorktrees: 'bridge:git:worktrees',
   GitWorktreeRemove: 'bridge:git:worktree-remove',
   GitCreatePr: 'bridge:git:create-pr',
+  GitMoveToOrg: 'bridge:git:move-to-org',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',

@@ -69,6 +69,16 @@ export default function RepoBar({ game }: { game: Game }) {
         {status.dirtyFiles > 0 && (
           <span className="text-[11px] text-amber-400/90">{status.dirtyFiles} uncommitted</span>
         )}
+        {status.inStudioOrg === false && (
+          <button
+            onClick={() => act('move-org', () => window.bridge.moveToOrg(game.id))}
+            disabled={busy !== null}
+            title={`Origin is ${status.remoteUrl} — outside the studio org, so teammates can't see it. Click to create the org repo, repoint origin, and push.`}
+            className="rounded-md border border-amber-800 px-2.5 py-0.5 text-[11px] text-amber-300 transition-colors hover:bg-amber-950/40 disabled:opacity-40"
+          >
+            {busy === 'move-org' ? 'Moving…' : 'personal repo — Move to studio org'}
+          </button>
+        )}
         <span className="text-[11px] text-neutral-600">
           {status.lastPulledAt ? `pulled ${timeAgo(status.lastPulledAt)}` : 'never pulled'}
         </span>

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
+import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
 import type { Game, GitRepoStatus } from '@shared/types'
 
 const execFileAsync = promisify(execFile)
@@ -40,6 +41,14 @@ export function toWebUrl(url: string | null): string | null {
   const repoPart = match ? match[1] : key.slice(key.indexOf('/') + 1)
   const host = key.slice(0, key.indexOf('/'))
   return `https://${host}/${repoPart}`
+}
+
+/** Is this remote inside the studio's GitHub org? null = no/unparseable remote. */
+export function remoteInOrg(url: string | null, org: string): boolean | null {
+  const key = normalizeRemoteKey(url)
+  if (!key) return null
+  const owner = key.split('/')[1]
+  return owner === org.toLowerCase()
 }
 
 export function parseAheadBehind(output: string): { ahead: number; behind: number } {
@@ -138,7 +147,17 @@ export async function ensureOnGithub(
       await execFileAsync('git', ['init', '-b', 'main', dir], { windowsHide: true })
       notes.push('Initialized a git repo in this folder.')
     }
-    if (await remoteUrl(dir)) return notes // already on a remote — leave it alone
+    const existingRemote = await remoteUrl(dir)
+    if (existingRemote) {
+      // Existing remotes are never rewired automatically — but say so when
+      // the repo lives outside the org, since teammates cannot see it there.
+      if (remoteInOrg(existingRemote, org) === false) {
+        notes.push(
+          `This project's GitHub remote is ${existingRemote} — outside ${org}, so teammates won't see it in Team games. Use "Move to studio org" in the repo bar to re-home it.`
+        )
+      }
+      return notes
+    }
     try {
       await git(dir, ['add', '-A'])
       await git(dir, ['commit', '--allow-empty', '-m', 'chore: initial commit via Bridge'])
@@ -189,6 +208,7 @@ export async function repoStatus(game: Game): Promise<GitRepoStatus> {
     behind: 0,
     hasUpstream: false,
     dirtyFiles: 0,
+    inStudioOrg: null,
     lastPulledAt: null,
     remoteUrl: null,
     webUrl: null
@@ -245,8 +265,47 @@ export async function repoStatus(game: Game): Promise<GitRepoStatus> {
     dirtyFiles,
     lastPulledAt,
     remoteUrl: remote,
-    webUrl: toWebUrl(remote)
+    webUrl: toWebUrl(remote),
+    inStudioOrg: remoteInOrg(remote, STUDIO_GITHUB_ORG)
   }
+}
+
+/**
+ * Re-home a repo whose origin lives outside the studio org: create the
+ * private org repo, repoint origin, push the current branch. The old remote
+ * repo keeps existing on GitHub (delete it there manually if unwanted).
+ */
+export async function moveRepoToOrg(game: Game, org: string, slug: string): Promise<string> {
+  const gh = ghExecutable()
+  try {
+    await execFileAsync(gh, ['repo', 'create', `${org}/${slug}`, '--private'], { windowsHide: true })
+  } catch (err) {
+    const anyErr = err as { stderr?: string; message?: string; code?: string }
+    const detail =
+      anyErr.code === 'ENOENT'
+        ? 'the GitHub CLI (gh) is not installed (checked Program Files and PATH)'
+        : (anyErr.stderr || anyErr.message || 'gh failed').trim().slice(0, 300)
+    throw new Error(`Could not create ${org}/${slug}: ${detail}`)
+  }
+  const newUrl = `https://github.com/${org}/${slug}.git`
+  await git(game.repoPath, ['remote', 'set-url', 'origin', newUrl])
+  // An unborn HEAD (repo with a remote but zero commits) has nothing to
+  // push — commit whatever is in the tree first.
+  try {
+    await git(game.repoPath, ['rev-parse', 'HEAD'])
+  } catch {
+    await git(game.repoPath, ['add', '-A'])
+    await git(game.repoPath, ['commit', '--allow-empty', '-m', 'chore: initial commit via Bridge'])
+  }
+  try {
+    await git(game.repoPath, ['push', '-u', 'origin', 'HEAD'])
+  } catch (err) {
+    const anyErr = err as { stderr?: string; message?: string }
+    throw new Error(
+      `Repo created and origin repointed, but the push failed: ${(anyErr.stderr || anyErr.message || '').trim().slice(0, 300)}`
+    )
+  }
+  return `https://github.com/${org}/${slug}`
 }
 
 /** Fast-forward pull; throws with git's message when it cannot fast-forward. */

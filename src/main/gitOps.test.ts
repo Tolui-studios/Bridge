@@ -20,6 +20,15 @@ describe('normalizeRemoteKey', () => {
   })
 })
 
+describe('remoteInOrg', () => {
+  it('detects org vs personal vs none', async () => {
+    const { remoteInOrg } = await import('./gitOps')
+    expect(remoteInOrg('https://github.com/Tolui-studios/Bridge.git', 'Tolui-studios')).toBe(true)
+    expect(remoteInOrg('https://github.com/tofulot/keyboard.git', 'Tolui-studios')).toBe(false)
+    expect(remoteInOrg(null, 'Tolui-studios')).toBeNull()
+  })
+})
+
 describe('toWebUrl', () => {
   it('builds an https url preserving repo casing', () => {
     expect(toWebUrl('git@github.com:Tolui-studios/Bridge.git')).toBe(

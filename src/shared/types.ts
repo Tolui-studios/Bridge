@@ -235,6 +235,8 @@ export interface GitRepoStatus {
   lastPulledAt: number | null
   remoteUrl: string | null
   webUrl: string | null
+  /** true = origin is in the studio org; false = elsewhere; null = no remote. */
+  inStudioOrg: boolean | null
 }
 
 export interface WorktreeRow {
@@ -311,6 +313,8 @@ export interface BridgeApi {
   saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
   gitStatus(gameId: string): Promise<GitRepoStatus>
   getTooling(gameId: string): Promise<ToolingReport>
+  /** Create the org repo, repoint origin, push. Returns the new web URL. */
+  moveToOrg(gameId: string): Promise<string>
   gitPull(gameId: string): Promise<string>
   listWorktrees(gameId: string): Promise<WorktreeRow[]>
   removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>
