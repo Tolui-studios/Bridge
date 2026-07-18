@@ -6,7 +6,7 @@ import { IPC } from '@shared/ipc-channels'
 import type { UsageSnapshot, UsageWindow } from '@shared/types'
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
-const POLL_MS = 10_000
+const POLL_MS = 60_000
 
 const KIND_LABELS: Record<string, string> = {
   session: 'Session (5h)',

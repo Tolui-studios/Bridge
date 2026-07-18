@@ -4,7 +4,7 @@ Desktop mission-control app for a solo Roblox game studio (org: **Tolui-studios*
 
 - Full product brief and roadmap: `docs/BRIEF.md`
 - Current phase + live checklist: `GOALS.md` (repo root — Bridge dogfoods its own check-bar)
-- **Phase status: Phase 3 shipped (worktree isolation per agent, interactive sessions with follow-ups/interrupt, live usage meter). Next: Phase 4 — agent stream → GOALS.md auto-updates through the single writer.**
+- **Phase status: Phase 4 shipped (persistent session history + agents auto-update the check-bar via the BRIDGE marker protocol). Next: Phase 5 — Obsidian vault integration (read design notes into agent context, write decisions/run summaries back).**
 
 ## Commands
 
@@ -40,6 +40,8 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
 5. **ESM specifics:** preload must be referenced as `../preload/index.mjs` and requires `sandbox: false`; `contextIsolation` stays `true`, `nodeIntegration` stays `false`. Do not "fix" these.
 6. **Agent SDK stays external:** `@anthropic-ai/claude-agent-sdk` is listed in `rollupOptions.external` for the main build (it spawns its CLI relative to its own package path — inlining breaks it) and in electron-builder `asarUnpack`. The SDK spawns `node` from PATH; `bypassPermissions` is never exposed in the UI. Agent runs cost real money — the launch form defaults to Sonnet 5 because a session-default run can land on the most expensive tier (~$0.50 for a trivial Fable-5 turn, measured). Smoke checks: `scripts/agent-smoke.mjs` (one turn) and `scripts/agent-smoke-interactive.mjs` (two turns, one session, Haiku).
 7. **Agent workspace rules:** every agent gets a worktree under the game's `worktreeRoot` (sibling of the repo — never inside it) via `WorktreeService`; non-git game dirs fall back to the repo dir with a transcript note. `settingSources: ['user', 'project']` must stay in the query options — the SDK loads NO CLAUDE.md layers without it. Note the sample fixture sits inside Bridge's own repo, so Claude Code resolves Bridge as its project; real game repos (own `.git`) get their own workspace identity.
+8. **Check-bar protocol (Phase 4):** each launch appends a footer telling the agent to report progress with line-anchored markers — `BRIDGE:START <item>`, `BRIDGE:DONE <item>`, `BRIDGE:ADD <item>` (exact checklist text; current checklist included in the footer). `agents.ts` parses assistant text (`@shared/goalMarkers`), and `goalSync.ts` applies matches to the CANONICAL repo GOALS.md via `GoalsService.mutate` — single-writer preserved; the agent's worktree copy is never the source of truth. Matching is conservative (exact → normalized → unique containment; ambiguous = reported, not guessed).
+9. **Session history:** finished sessions persist to `%APPDATA%\Bridge\sessions\<gameId>\<sessionId>.json` via `sessionStore.ts` (summaries load at startup, transcripts lazily, newest 50 kept per game, dir deleted when a game is removed). Sessions found live on startup are coerced to `cancelled`.
 8. **Usage meter:** `usage.ts` polls `api.anthropic.com/api/oauth/usage` (the same unofficial endpoint the CLI's /usage screen uses) with the machine's Claude Code OAuth token, parsing the `limits[]` array. It's not a public API — if it changes shape or 401s, the bar degrades to a reason string; never let it break anything else.
 
 ## Version pins — do not casually upgrade

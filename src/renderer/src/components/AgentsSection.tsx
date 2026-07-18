@@ -93,7 +93,7 @@ export default function AgentsSection({ game }: { game: Game }) {
       )}
 
       {sessions.length > 0 && (
-        <ul className="mb-3 space-y-1">
+        <ul className="mb-3 max-h-52 space-y-1 overflow-y-auto pr-1">
           {sessions.map((session) => (
             <SessionRow
               key={session.id}
@@ -340,7 +340,8 @@ const KIND_STYLE: Record<AgentStreamItem['kind'], string> = {
   'tool-result': 'text-neutral-500',
   denied: 'text-red-400',
   result: 'text-emerald-300',
-  stderr: 'text-orange-300/90'
+  stderr: 'text-orange-300/90',
+  goal: 'text-amber-300'
 }
 
 function Transcript({ items, running }: { items: AgentStreamItem[]; running: boolean }) {
@@ -364,6 +365,7 @@ function Transcript({ items, running }: { items: AgentStreamItem[]; running: boo
           {item.kind === 'user' && <span className="text-emerald-500">❯ </span>}
           {item.kind === 'tool' && <span className="text-sky-500">→ </span>}
           {item.kind === 'tool-result' && <span className="text-neutral-700">← </span>}
+          {item.kind === 'goal' && <span className="text-amber-500">⚑ </span>}
           {item.text}
         </p>
       ))}

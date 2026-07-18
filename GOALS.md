@@ -1,16 +1,15 @@
 # Bridge — Current Goal
 
-> Isolate every agent in its own worktree and make sessions fully interactive.
+> Agents report their progress and the check-bar moves by itself.
 
-## Phase: 3 — Worktrees + interactive sessions
+## Phase: 4 — Live check-bar
 
 ## Checklist
 
-- [x] Fable 5 model option + subagents toggle
-- [x] Interactive sessions: follow-ups, interrupt, idle state
-- [x] Live Claude usage bar in the sidebar
-- [x] Worktree create/reuse per agent (branch agent-N, outside the repo)
-- [x] CLAUDE.local.md propagation into fresh worktrees
-- [x] Memory layers loaded (user + project CLAUDE.md via settingSources)
-- [x] Worktree test suite against real git repos
-- [x] Parallel agents per game with quick session switching
+- [x] Persist finished sessions to disk (survive app restarts)
+- [x] Lazy transcript loading + newest-50-per-game pruning
+- [x] Session history cleaned up when a game is removed
+- [x] BRIDGE:DONE / START / ADD marker protocol parsed from the agent stream
+- [x] Markers applied to GOALS.md through the single writer
+- [x] Protocol footer with the live checklist injected into each launch
+- [x] Marker, goal-sync, and session-store test suites

@@ -105,6 +105,8 @@ export type AgentStreamKind =
   | 'denied'
   | 'result'
   | 'stderr'
+  /** Outcome of a BRIDGE:DONE/START/ADD progress marker applied to GOALS.md. */
+  | 'goal'
 
 export interface AgentStreamItem {
   id: string

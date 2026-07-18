@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { IPC } from '@shared/ipc-channels'
+import { parseBridgeMarkers } from '@shared/goalMarkers'
+import type { BridgeMarker } from '@shared/goalMarkers'
 import type {
   AgentEvent,
   AgentLaunchConfig,
@@ -13,10 +15,13 @@ import type {
   Game
 } from '@shared/types'
 import type { WorktreeService } from './worktrees'
+import type { SessionStore } from './sessionStore'
 
 const MAX_ITEMS_PER_SESSION = 500
 const MAX_ITEM_TEXT = 2000
 const MAX_TOOL_RESULT_TEXT = 400
+const KEEP_SESSIONS_PER_GAME = 50
+const PERSIST_DEBOUNCE_MS = 1500
 
 /** Push-based async iterable used as the SDK's streaming prompt input. */
 class AsyncQueue<T> implements AsyncIterable<T> {
@@ -57,27 +62,58 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 
 interface SessionRecord {
   summary: AgentSessionSummary
-  items: AgentStreamItem[]
-  abort: AbortController
-  input: AsyncQueue<SDKUserMessage>
+  /** null = persisted session whose transcript has not been loaded yet. */
+  items: AgentStreamItem[] | null
+  /** Live-session plumbing; null on sessions restored from disk. */
+  abort: AbortController | null
+  input: AsyncQueue<SDKUserMessage> | null
   query: Query | null
   claudeSessionId: string | null
+  saveTimer: NodeJS.Timeout | null
+}
+
+export interface AgentServiceHooks {
+  /** Called whenever a session settles (result, idle, error, cancelled). */
+  onSettled?: () => void
+  /** Appended to the initial task so agents know the check-bar protocol. */
+  taskFooter?: (gameId: string) => string
+  /** Applies a BRIDGE marker to GOALS.md; returns a transcript note. */
+  applyMarker?: (gameId: string, marker: BridgeMarker) => string
 }
 
 /**
- * Owns agent sessions in the main process. Each session is interactive:
- * streaming prompt input keeps the Claude Code process alive between turns
- * ('idle' status), so the operator can send follow-ups, interrupt the
- * current turn, or end the session. Games can run multiple sessions in
- * parallel — each agent gets its own git worktree via WorktreeService.
+ * Owns agent sessions in the main process. Sessions are interactive
+ * (streaming input; follow-ups, interrupt, idle) and games run any number in
+ * parallel, one worktree each. Finished sessions persist to disk via
+ * SessionStore and are restored (summaries eagerly, transcripts lazily) at
+ * startup, capped at the newest 50 per game.
  */
 export class AgentService {
   private sessions = new Map<string, SessionRecord>()
 
   constructor(
     private readonly worktrees: WorktreeService,
-    private readonly onSettled?: () => void
-  ) {}
+    private readonly store: SessionStore,
+    private readonly hooks: AgentServiceHooks = {}
+  ) {
+    for (const persisted of this.store.loadAllSummaries()) {
+      const summary = { ...persisted }
+      if (summary.status === 'running' || summary.status === 'idle') {
+        // The app died while this session was live.
+        summary.status = 'cancelled'
+        summary.endedAt = summary.endedAt ?? Date.now()
+      }
+      this.sessions.set(summary.id, {
+        summary,
+        items: null,
+        abort: null,
+        input: null,
+        query: null,
+        claudeSessionId: null,
+        saveTimer: null
+      })
+    }
+  }
 
   start(game: Game, config: AgentLaunchConfig): AgentSessionSummary {
     const task = config.task.trim()
@@ -102,11 +138,12 @@ export class AgentService {
       abort: new AbortController(),
       input: new AsyncQueue<SDKUserMessage>(),
       query: null,
-      claudeSessionId: null
+      claudeSessionId: null,
+      saveTimer: null
     }
     this.sessions.set(record.summary.id, record)
     this.emitStatus(record)
-    void this.run(record, game, task)
+    void this.run(record, game, task, record.input!, record.abort!)
     return { ...record.summary }
   }
 
@@ -115,7 +152,9 @@ export class AgentService {
     const record = this.require(sessionId)
     const text = rawText.trim()
     if (!text) throw new Error('Prompt text is required.')
-    if (!isLive(record.summary.status)) throw new Error('This session has ended.')
+    if (!isLive(record.summary.status) || !record.input || record.input.isEnded) {
+      throw new Error('This session has ended.')
+    }
     this.push(record, 'user', text)
     record.input.push(userMessage(text, record.claudeSessionId))
     if (record.summary.status === 'idle') {
@@ -140,8 +179,8 @@ export class AgentService {
     const record = this.require(sessionId)
     if (!isLive(record.summary.status)) return
     const wasRunning = record.summary.status === 'running'
-    record.input.end()
-    if (wasRunning) record.abort.abort()
+    record.input?.end()
+    if (wasRunning) record.abort?.abort()
   }
 
   list(gameId: string): AgentSessionSummary[] {
@@ -152,19 +191,46 @@ export class AgentService {
   }
 
   transcript(sessionId: string): AgentStreamItem[] {
-    return [...this.require(sessionId).items]
+    const record = this.require(sessionId)
+    if (record.items === null) {
+      record.items = this.store.loadItems(record.summary.gameId, sessionId) ?? []
+    }
+    return [...record.items]
+  }
+
+  /** Stop and forget every session for a removed game, including on disk. */
+  removeForGame(gameId: string): void {
+    for (const [id, record] of [...this.sessions]) {
+      if (record.summary.gameId !== gameId) continue
+      if (isLive(record.summary.status)) {
+        record.input?.end()
+        record.abort?.abort()
+      }
+      if (record.saveTimer) clearTimeout(record.saveTimer)
+      this.sessions.delete(id)
+    }
+    this.store.removeGame(gameId)
   }
 
   closeAll(): void {
     for (const record of this.sessions.values()) {
       if (isLive(record.summary.status)) {
-        record.input.end()
-        record.abort.abort()
+        record.input?.end()
+        record.abort?.abort()
+        // Persist synchronously now — the run loop may not get to finish()
+        // before the process exits.
+        this.finish(record, 'cancelled', null)
       }
     }
   }
 
-  private async run(record: SessionRecord, game: Game, task: string): Promise<void> {
+  private async run(
+    record: SessionRecord,
+    game: Game,
+    task: string,
+    input: AsyncQueue<SDKUserMessage>,
+    abort: AbortController
+  ): Promise<void> {
     let leased = false
     try {
       let cwd = game.repoPath
@@ -191,9 +257,10 @@ export class AgentService {
       record.summary.cwd = cwd
       this.emitStatus(record)
 
-      record.input.push(userMessage(task, null))
+      const footer = this.hooks.taskFooter?.(game.id) ?? ''
+      input.push(userMessage(task + footer, null))
       const stream = query({
-        prompt: record.input,
+        prompt: input,
         options: {
           cwd,
           permissionMode: record.summary.permissionMode,
@@ -202,7 +269,7 @@ export class AgentService {
           // Load the memory layers: ~/.claude/CLAUDE.md (studio-wide) and the
           // workspace CLAUDE.md — the SDK loads neither by default.
           settingSources: ['user', 'project'],
-          abortController: record.abort,
+          abortController: abort,
           stderr: (data: string) => {
             const text = data.trim()
             if (text) this.push(record, 'stderr', text)
@@ -217,11 +284,11 @@ export class AgentService {
         this.handle(record, next.value)
       }
       if (isLive(record.summary.status)) {
-        this.finish(record, record.abort.signal.aborted ? 'cancelled' : 'done', null)
+        this.finish(record, abort.signal.aborted ? 'cancelled' : 'done', null)
       }
     } catch (err) {
       if (isLive(record.summary.status)) {
-        if (record.abort.signal.aborted) {
+        if (abort.signal.aborted) {
           this.finish(record, 'cancelled', null)
         } else {
           const message = err instanceof Error ? err.message : String(err)
@@ -230,7 +297,7 @@ export class AgentService {
         }
       }
     } finally {
-      record.input.end()
+      input.end()
       if (leased) this.worktrees.release(record.summary.id)
     }
   }
@@ -254,6 +321,7 @@ export class AgentService {
         for (const block of message.message.content) {
           if (block.type === 'text' && block.text.trim()) {
             this.push(record, 'text', block.text.trim())
+            this.applyMarkers(record, block.text)
           } else if (block.type === 'tool_use') {
             this.push(record, 'tool', `${block.name} ${compactJson(block.input)}`.trim())
           }
@@ -281,12 +349,13 @@ export class AgentService {
         )
         if (message.is_error) {
           this.finish(record, 'error', message.subtype)
-          record.input.end()
-        } else if (!record.input.isEnded && !record.abort.signal.aborted) {
+          record.input?.end()
+        } else if (record.input && !record.input.isEnded && !record.abort?.signal.aborted) {
           // Session stays alive for follow-up prompts.
           record.summary.status = 'idle'
           this.emitStatus(record)
-          this.onSettled?.()
+          this.persist(record)
+          this.hooks.onSettled?.()
         }
         break
       }
@@ -295,12 +364,54 @@ export class AgentService {
     }
   }
 
+  private applyMarkers(record: SessionRecord, text: string): void {
+    if (!this.hooks.applyMarker) return
+    for (const marker of parseBridgeMarkers(text)) {
+      try {
+        this.push(record, 'goal', this.hooks.applyMarker(record.summary.gameId, marker))
+      } catch (err) {
+        this.push(
+          record,
+          'goal',
+          `check-bar update failed (${marker.kind} '${marker.text}'): ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+  }
+
   private finish(record: SessionRecord, status: AgentStatus, error: string | null): void {
+    if (!isLive(record.summary.status)) return
     record.summary.status = status
     record.summary.endedAt = Date.now()
     record.summary.error = error
     this.emitStatus(record)
-    this.onSettled?.()
+    this.persist(record)
+    for (const removedId of this.store.prune(record.summary.gameId, KEEP_SESSIONS_PER_GAME)) {
+      const removed = this.sessions.get(removedId)
+      if (removed && !isLive(removed.summary.status)) this.sessions.delete(removedId)
+    }
+    this.hooks.onSettled?.()
+  }
+
+  private persist(record: SessionRecord): void {
+    if (!this.sessions.has(record.summary.id)) return
+    if (record.saveTimer) {
+      clearTimeout(record.saveTimer)
+      record.saveTimer = null
+    }
+    try {
+      this.store.save({ ...record.summary }, record.items ?? [])
+    } catch (err) {
+      console.warn('[agents] failed to persist session', record.summary.id, err)
+    }
+  }
+
+  private schedulePersist(record: SessionRecord): void {
+    if (record.saveTimer) return
+    record.saveTimer = setTimeout(() => {
+      record.saveTimer = null
+      this.persist(record)
+    }, PERSIST_DEBOUNCE_MS)
   }
 
   private push(record: SessionRecord, kind: AgentStreamKind, rawText: string): void {
@@ -313,9 +424,11 @@ export class AgentService {
       kind,
       text
     }
+    if (!record.items) record.items = []
     record.items.push(item)
     if (record.items.length > MAX_ITEMS_PER_SESSION) record.items.shift()
     this.emit({ type: 'item', item })
+    this.schedulePersist(record)
   }
 
   private emitStatus(record: SessionRecord): void {

@@ -35,6 +35,7 @@ export function registerIpc(
   })
 
   ipcMain.handle(IPC.GamesRemove, (_event, id: string) => {
+    agents.removeForGame(id)
     registry.remove(id)
     broadcastRegistry()
   })
