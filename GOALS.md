@@ -7,11 +7,11 @@
 ## Checklist
 
 - [x] Repo hygiene (brief, CLAUDE.md, git config files)
-- [ ] Toolchain (electron-vite + react + ts + tailwind + vitest) <!-- in-progress -->
-- [ ] Minimal window boots
-- [ ] Dark Tailwind shell
-- [ ] GOALS.md parser + tests
-- [ ] Game registry + sidebar
-- [ ] Goals panel + live file watch
-- [ ] Fixture + dogfood registration
-- [ ] Windows installer builds
+- [x] Toolchain (electron-vite + react + ts + tailwind + vitest)
+- [x] Minimal window boots
+- [x] Dark Tailwind shell
+- [x] GOALS.md parser + tests
+- [x] Game registry + sidebar
+- [x] Goals panel + live file watch
+- [x] Fixture + dogfood registration
+- [x] Windows installer builds
