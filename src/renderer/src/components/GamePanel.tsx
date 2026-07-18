@@ -11,6 +11,7 @@ import EditableText from './EditableText'
 import AgentsSection from './AgentsSection'
 import RepoBar from './RepoBar'
 import TeamNote from './TeamNote'
+import ToolingSection from './ToolingSection'
 
 interface Props {
   game: Game
@@ -114,6 +115,8 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
       )}
 
       <RepoBar game={game} />
+
+      <ToolingSection game={game} />
 
       {actionError && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2">

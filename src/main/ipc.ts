@@ -33,6 +33,7 @@ import {
 import path from 'node:path'
 import fs from 'node:fs'
 import { scaffoldRobloxGame } from './robloxScaffold'
+import { gameTooling } from './tooling'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -250,6 +251,9 @@ export function registerIpc(
   )
 
   ipcMain.handle(IPC.GitStatus, (_event, gameId: string) => repoStatus(requireGame(gameId)))
+  ipcMain.handle(IPC.GameTooling, (_event, gameId: string) =>
+    gameTooling(requireGame(gameId).repoPath)
+  )
   ipcMain.handle(IPC.GitPull, (_event, gameId: string) => pull(requireGame(gameId)))
   ipcMain.handle(IPC.GitWorktrees, (_event, gameId: string) =>
     worktrees.listWithUsage(requireGame(gameId))

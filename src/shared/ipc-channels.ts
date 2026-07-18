@@ -31,6 +31,7 @@ export const IPC = {
   TeamNoteSave: 'bridge:team:note-save',
   TeamLinkGame: 'bridge:team:link-game',
   GitStatus: 'bridge:git:status',
+  GameTooling: 'bridge:git:tooling',
   GitPull: 'bridge:git:pull',
   GitWorktrees: 'bridge:git:worktrees',
   GitWorktreeRemove: 'bridge:git:worktree-remove',

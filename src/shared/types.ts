@@ -204,6 +204,26 @@ export interface TeamNoteState {
   updatedAt: number | null
 }
 
+export interface ToolingTool {
+  name: string
+  spec: string
+}
+
+export interface ToolingPackage {
+  name: string
+  spec: string
+  comment: string | null
+  dev: boolean
+  /** Present in wally.toml but commented out (per-genre opt-in). */
+  optional: boolean
+}
+
+export interface ToolingReport {
+  tools: ToolingTool[]
+  packages: ToolingPackage[]
+  configs: string[]
+}
+
 export interface GitRepoStatus {
   isRepo: boolean
   branch: string | null
@@ -290,6 +310,7 @@ export interface BridgeApi {
   getTeamNote(gameId: string): Promise<TeamNoteState | null>
   saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
   gitStatus(gameId: string): Promise<GitRepoStatus>
+  getTooling(gameId: string): Promise<ToolingReport>
   gitPull(gameId: string): Promise<string>
   listWorktrees(gameId: string): Promise<WorktreeRow[]>
   removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>

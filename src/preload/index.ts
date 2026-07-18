@@ -65,6 +65,7 @@ const api: BridgeApi = {
   saveTeamNote: (gameId: string, content: string, baseVersion: number) =>
     ipcRenderer.invoke(IPC.TeamNoteSave, gameId, content, baseVersion),
   gitStatus: (gameId: string) => ipcRenderer.invoke(IPC.GitStatus, gameId),
+  getTooling: (gameId: string) => ipcRenderer.invoke(IPC.GameTooling, gameId),
   gitPull: (gameId: string) => ipcRenderer.invoke(IPC.GitPull, gameId),
   listWorktrees: (gameId: string) => ipcRenderer.invoke(IPC.GitWorktrees, gameId),
   removeWorktree: (gameId: string, worktreePath: string, force: boolean) =>

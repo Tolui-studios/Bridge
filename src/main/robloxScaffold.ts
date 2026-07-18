@@ -139,6 +139,7 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
       '- **Networking:** ByteNet namespaces in `src/shared/Remotes/` — never raw RemoteEvents/RemoteFunctions.',
       '- **State/UI:** Reflex stores; React + React-Roblox 17 under `client/UI/` (App.luau + Components/Context/Hooks/Theme/Views); Ripple for animation; UI-Labs stories in `src/stories/`.',
       '- **Utilities:** Trove for cleanup, Signal for events, Observers for player/tag observation, Cmdr commands in `server/Commands/`.',
+      '- **3D models:** when `mcp__robloxstudio__*` tools are in your session, use the `generate-3d-model` skill for meshes/props (persist via CreateAssetAsync — see global conventions); simple shapes are part-builds. The toolchain (selene/stylua/lune) is on your PATH for verification.',
       '',
       '## Tree',
       '',
