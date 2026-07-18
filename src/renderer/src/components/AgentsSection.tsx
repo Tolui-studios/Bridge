@@ -47,44 +47,25 @@ export default function AgentsSection({ game }: { game: Game }) {
   } = useAgents(game.id)
   const [showForm, setShowForm] = useState(false)
 
-  const live = sessions.find((s) => s.status === 'running' || s.status === 'idle') ?? null
   const active = sessions.find((s) => s.id === activeId) ?? null
-  const formOpen = !live && (showForm || sessions.length === 0)
+  const activeLive = active !== null && (active.status === 'running' || active.status === 'idle')
+  const liveCount = sessions.filter((s) => s.status === 'running' || s.status === 'idle').length
+  const formOpen = showForm || sessions.length === 0
 
   return (
     <section className="mt-10 border-t border-neutral-900 pt-6">
       <div className="mb-4 flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
-          Agents
+          Agents{liveCount > 0 && <span className="ml-2 text-amber-400/80">{liveCount} live</span>}
         </h3>
-        <div className="flex items-center gap-2">
-          {!formOpen && !live && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
-            >
-              + New Agent
-            </button>
-          )}
-          {live?.status === 'running' && (
-            <button
-              onClick={() => interrupt(live.id)}
-              title="Stop the current turn but keep the session alive for follow-ups"
-              className="rounded-md border border-amber-800 px-3 py-1.5 text-xs text-amber-300 transition-colors hover:bg-amber-950/40"
-            >
-              Interrupt
-            </button>
-          )}
-          {live && (
-            <button
-              onClick={() => cancel(live.id)}
-              title={live.status === 'running' ? 'Abort the turn and end the session' : 'End this idle session'}
-              className="rounded-md border border-red-900 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-950/40"
-            >
-              {live.status === 'running' ? 'Stop' : 'End session'}
-            </button>
-          )}
-        </div>
+        {!formOpen && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
+          >
+            + New Agent
+          </button>
+        )}
       </div>
 
       {error && (
@@ -119,6 +100,11 @@ export default function AgentsSection({ game }: { game: Game }) {
               session={session}
               active={session.id === activeId}
               onSelect={() => setActiveId(session.id)}
+              onStop={
+                session.status === 'running' || session.status === 'idle'
+                  ? () => cancel(session.id)
+                  : null
+              }
             />
           ))}
         </ul>
@@ -126,8 +112,41 @@ export default function AgentsSection({ game }: { game: Game }) {
 
       {active && (
         <>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span
+              className="truncate font-mono text-[10px] text-neutral-600"
+              title={active.cwd ?? undefined}
+            >
+              {active.cwd ? `${basename(active.cwd)} · ` : ''}
+              {active.status}
+            </span>
+            <span className="flex shrink-0 gap-2">
+              {active.status === 'running' && (
+                <button
+                  onClick={() => interrupt(active.id)}
+                  title="Stop the current turn but keep the session alive for follow-ups"
+                  className="rounded-md border border-amber-800 px-2.5 py-1 text-[11px] text-amber-300 transition-colors hover:bg-amber-950/40"
+                >
+                  Interrupt
+                </button>
+              )}
+              {activeLive && (
+                <button
+                  onClick={() => cancel(active.id)}
+                  title={
+                    active.status === 'running'
+                      ? 'Abort the turn and end this session'
+                      : 'End this idle session'
+                  }
+                  className="rounded-md border border-red-900 px-2.5 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-950/40"
+                >
+                  {active.status === 'running' ? 'Stop' : 'End session'}
+                </button>
+              )}
+            </span>
+          </div>
           <Transcript items={transcript} running={active.status === 'running'} />
-          {(active.status === 'running' || active.status === 'idle') && (
+          {activeLive && (
             <FollowUpRow
               running={active.status === 'running'}
               onSend={(text) => reprompt(active.id, text)}
@@ -137,6 +156,11 @@ export default function AgentsSection({ game }: { game: Game }) {
       )}
     </section>
   )
+}
+
+function basename(p: string): string {
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? p
 }
 
 function LaunchForm({
@@ -253,11 +277,13 @@ const STATUS_STYLE: Record<AgentSessionSummary['status'], { dot: string; label: 
 function SessionRow({
   session,
   active,
-  onSelect
+  onSelect,
+  onStop
 }: {
   session: AgentSessionSummary
   active: boolean
   onSelect: () => void
+  onStop: (() => void) | null
 }) {
   const style = STATUS_STYLE[session.status]
   const meta: string[] = [new Date(session.startedAt).toLocaleTimeString()]
@@ -265,20 +291,43 @@ function SessionRow({
   if (session.costUsd !== null) meta.push(`$${session.costUsd.toFixed(4)}`)
   return (
     <li>
-      <button
+      <div
         onClick={onSelect}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onSelect()
+        }}
         title={session.cwd ? `Workspace: ${session.cwd}` : session.task}
-        className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors ${
+        className={`group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors ${
           active ? 'bg-neutral-800/80' : 'hover:bg-neutral-900'
         }`}
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
         <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">{session.task}</span>
+        {session.cwd && (
+          <span className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 font-mono text-[9px] text-neutral-500">
+            {basename(session.cwd)}
+          </span>
+        )}
         <span className={`shrink-0 text-[10px] uppercase tracking-wide ${style.label}`}>
           {session.status}
         </span>
         <span className="shrink-0 text-[10px] text-neutral-600">{meta.join(' · ')}</span>
-      </button>
+        {onStop && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation()
+              onStop()
+            }}
+            role="button"
+            title="Stop this session"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-neutral-600 opacity-0 transition-opacity hover:bg-red-950/50 hover:text-red-400 group-hover:opacity-100"
+          >
+            ✕
+          </span>
+        )}
+      </div>
     </li>
   )
 }

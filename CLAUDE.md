@@ -22,7 +22,7 @@ Electron, ESM end-to-end (`"type": "module"`).
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/mutate/template (`goals.ts`), agent sessions via `@anthropic-ai/claude-agent-sdk` (`agents.ts` — streaming-input interactive sessions: follow-ups, interrupt, idle; one live agent per game), git worktree pool (`worktrees.ts` — electron-free, vitest-covered, `agent-<n>` dirs+branches under `worktreeRoot`, copies gitignored `CLAUDE.local.md` in), Claude usage polling (`usage.ts`), IPC handlers + dialogs + shell.openPath (`ipc.ts`). Owns ALL fs/process/SDK work. |
+| Main | `src/main/` | App lifecycle (`index.ts`), game registry JSON store (`registry.ts`), GOALS.md read/parse/watch/mutate/template (`goals.ts`), agent sessions via `@anthropic-ai/claude-agent-sdk` (`agents.ts` — streaming-input interactive sessions: follow-ups, interrupt, idle; games run parallel sessions, one worktree each), git worktree pool (`worktrees.ts` — electron-free, vitest-covered, `agent-<n>` dirs+branches under `worktreeRoot`, copies gitignored `CLAUDE.local.md` in), Claude usage polling (`usage.ts`), IPC handlers + dialogs + shell.openPath (`ipc.ts`). Owns ALL fs/process/SDK work. |
 | Preload | `src/preload/` | `contextBridge` exposure of `window.bridge` only — typed wrappers, zero logic. |
 | Renderer | `src/renderer/` | React 19 + Tailwind v4 dashboard. Never touches Node APIs; talks only through `window.bridge`. |
 | Shared | `src/shared/` | Types (`types.ts`), IPC channel constants (`ipc-channels.ts`), pure GOALS.md parser (`goalsParser.ts`, vitest-covered). |

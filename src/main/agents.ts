@@ -68,8 +68,8 @@ interface SessionRecord {
  * Owns agent sessions in the main process. Each session is interactive:
  * streaming prompt input keeps the Claude Code process alive between turns
  * ('idle' status), so the operator can send follow-ups, interrupt the
- * current turn, or end the session. One live (running/idle) agent per game;
- * each agent runs inside its own git worktree via WorktreeService.
+ * current turn, or end the session. Games can run multiple sessions in
+ * parallel — each agent gets its own git worktree via WorktreeService.
  */
 export class AgentService {
   private sessions = new Map<string, SessionRecord>()
@@ -82,11 +82,6 @@ export class AgentService {
   start(game: Game, config: AgentLaunchConfig): AgentSessionSummary {
     const task = config.task.trim()
     if (!task) throw new Error('Task is required.')
-    for (const record of this.sessions.values()) {
-      if (record.summary.gameId === game.id && isLive(record.summary.status)) {
-        throw new Error('An agent session is already active for this game. Stop it first.')
-      }
-    }
     const record: SessionRecord = {
       summary: {
         id: randomUUID(),

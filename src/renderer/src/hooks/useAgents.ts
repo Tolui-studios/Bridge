@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentLaunchConfig, AgentSessionSummary, AgentStreamItem } from '@shared/types'
 import { cleanIpcError } from '../lib/ipcError'
 
@@ -18,21 +18,28 @@ export function useAgents(gameId: string): {
   const [transcripts, setTranscripts] = useState<Record<string, AgentStreamItem[]>>({})
   const [activeId, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const knownIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     setSessions([])
     setTranscripts({})
     setActiveId(null)
     setError(null)
+    knownIds.current = new Set()
     let alive = true
     void window.bridge.listAgentSessions(gameId).then((list) => {
       if (!alive) return
+      for (const session of list) knownIds.current.add(session.id)
       setSessions(list)
       setActiveId((prev) => prev ?? list[0]?.id ?? null)
     })
     const unsubscribe = window.bridge.onAgentEvent((event) => {
       if (event.type === 'status') {
         if (event.session.gameId !== gameId) return
+        // Only auto-focus sessions we have never seen (fresh launches) so
+        // parallel sessions don't steal the selection from each other.
+        const isNew = !knownIds.current.has(event.session.id)
+        knownIds.current.add(event.session.id)
         setSessions((prev) => {
           const index = prev.findIndex((s) => s.id === event.session.id)
           if (index === -1) return [event.session, ...prev]
@@ -40,7 +47,7 @@ export function useAgents(gameId: string): {
           next[index] = event.session
           return next
         })
-        if (event.session.status === 'running') setActiveId(event.session.id)
+        if (isNew) setActiveId(event.session.id)
       } else {
         if (event.item.gameId !== gameId) return
         setTranscripts((prev) => ({

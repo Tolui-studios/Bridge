@@ -13,3 +13,4 @@
 - [x] CLAUDE.local.md propagation into fresh worktrees
 - [x] Memory layers loaded (user + project CLAUDE.md via settingSources)
 - [x] Worktree test suite against real git repos
+- [x] Parallel agents per game with quick session switching
