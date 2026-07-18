@@ -12,33 +12,47 @@ You are working in a Roblox game repo (Luau, synced to Roblox Studio via Rojo) b
 4. **Plan before executing.** Read the systems you'll touch first, state a short plan, then implement. Don't restructure systems you weren't asked to touch.
 5. Don't add external dependencies (Wally packages, etc.) without being asked.
 
+## The studio stack (use these, don't reinvent)
+
+Full reference with pins: `docs/ROBLOX-STACK.md` in the Bridge repo. Toolchain: Rokit → Rojo, Lune, Wally, Selene.
+
+- **Bootstrap:** hand-rolled Init/Start singleton loader — **never introduce Knit or Flamework**. Server systems are ModuleScripts in `src/server/Services/`, client ones in `src/client/Controllers/`; the init scripts auto-require them, call `:Init()` on all (setup, no cross-system calls), then `:Start()` on all (wiring). Adding a system = adding a module there; never edit the init scripts for that.
+- **Data:** ProfileStore (session-locked) behind `server/Managers/DataManager` — all persistence goes through it. Replicate to clients with **Replica** (`server/Managers/ReplicaManager`), not hand-rolled remotes.
+- **Networking:** **ByteNet namespaces in `src/shared/Remotes/`**. Raw RemoteEvents/RemoteFunctions are banned.
+- **State/UI:** Reflex for state; React + React-Roblox 17 (jsdotlua) under `client/UI/` — App.luau plus Components/Context/Hooks/Theme/Views; Ripple for animation; UI-Labs stories in `src/stories/`.
+- **Utilities:** Trove for lifetime cleanup (one Trove per system, `:Clean()` on teardown), Signal for events, Observers for player/tag/attribute observation, Cmdr for admin commands (`server/Commands/`).
+- Packages come from Wally (`wally.toml`) and mount at `ReplicatedStorage.Packages`. The `Packages/` folder is gitignored and may be absent in your worktree — trust `wally.toml` for what exists. Add new Wally dependencies only when asked.
+
 ## Luau conventions
 
 - `--!strict` at the top of every file. Type public function signatures and module APIs; avoid `any` — infer or annotate.
-- One system per module under `src/shared/systems/` (or the game's documented layout). Modules return a table; **no side effects at require time** — expose `init()` (and `step(dt)` if the system ticks).
-- All tunable numbers live in a `Config` module beside the system, never inline magic numbers.
+- Modules return a table; **no side effects at require time** — work happens in `:Init()`/`:Start()`.
+- All tunable numbers live in `src/shared/Config/` (or `server/SETTINGS.luau` for server-wide knobs), never inline.
 - Services once at the top: `local Players = game:GetService("Players")` — never `game.Players`.
 - Naming: PascalCase for modules/types/services, camelCase for locals and functions, SCREAMING_SNAKE for constants.
 - Modern task library only: `task.spawn`/`task.defer`/`task.wait` — never legacy `spawn`, `delay`, or global `wait`.
-- Events over polling: never drive gameplay logic from `RenderStepped`/`Heartbeat` loops when a signal, event, or property-changed connection works.
-- Every connection gets cleaned up: systems own their connections and disconnect them in `destroy()` (Maid/Janitor-style bookkeeping is fine).
+- Events over polling: never drive gameplay logic from `RenderStepped`/`Heartbeat` loops when a signal, event, or Observer works.
+- Every connection lives in the system's Trove and dies with it.
 - Guard clauses and early returns over deep nesting.
 
 ## Client/server rules
 
 - **The server owns all state that matters.** The client renders and requests; it never decides outcomes (damage, currency, unlocks, spawns).
-- Validate every RemoteEvent/RemoteFunction input server-side: types, ranges, rate, and whether that player may do that thing right now. Assume the client is hostile.
+- Validate every ByteNet packet server-side: types, ranges, rate, and whether that player may do that thing right now. Assume the client is hostile.
 - Never store secrets or authoritative data in ReplicatedStorage.
-- Remotes live in a defined folder with typed wrapper modules — no raw `FireServer` scattered through gameplay code.
 
-## Repo layout (Rojo standard here)
+## Repo layout (every game is scaffolded like this)
 
-| Folder | Mounts to | Runs on |
-|---|---|---|
-| `src/shared/` | `ReplicatedStorage.Shared` | both |
-| `src/server/` | `ServerScriptService.Server` | server |
-| `src/client/` | `StarterPlayer.StarterPlayerScripts.Client` | client |
+| Folder | Mounts to |
+|---|---|
+| `src/client/` (Controllers, Managers, Signals, UI) | `StarterPlayer.StarterPlayerScripts.Client` |
+| `src/server/` (Services, Managers, Commands, SETTINGS) | `ServerScriptService.Server` |
+| `src/shared/` (Config, Data, Enums, Types, Utils, Remotes) | `ReplicatedStorage.Shared` |
+| `src/replicated-first/` | `ReplicatedFirst` |
+| `src/stories/` | `ServerStorage.Stories` |
+| `src/lighting/` | `Lighting` |
+| `Packages/` (gitignored, Wally output) | `ReplicatedStorage.Packages` |
 
 ## Verification
 
-You cannot run the game. Verify what you can: `stylua --check src` and `selene src` when available (configs are in the repo), require-graph sanity (no cycles, no client requiring server modules), and strict-mode type discipline. Say plainly what could only be verified in Studio.
+You cannot run the game. Verify what you can: `selene src` and `stylua --check src` when available (configs are in the repo; tools via Rokit), require-graph sanity (no cycles, no client requiring server modules), and strict-mode type discipline. Jest (jsdotlua) specs exist for pure shared logic where the game has them. Say plainly what could only be verified in Studio.

@@ -19,35 +19,65 @@ afterAll(() => {
 })
 
 describe('scaffoldRobloxGame', () => {
-  it('creates the full Rojo project shape', () => {
+  it('creates the full studio stack shape', () => {
     const dir = path.join(root, 'fresh')
     fs.mkdirSync(dir)
-    const created = scaffoldRobloxGame(dir, 'Kingdom of Ash', 'Kingdom-of-Ash')
+    scaffoldRobloxGame(dir, 'Kingdom of Ash', 'Kingdom-of-Ash')
 
-    expect(created).toContain('default.project.json')
     const project = JSON.parse(fs.readFileSync(path.join(dir, 'default.project.json'), 'utf8'))
-    expect(project.name).toBe('Kingdom-of-Ash')
+    expect(project.name).toBe('Kingdom of Ash')
     expect(project.tree.ReplicatedStorage.Shared.$path).toBe('src/shared')
-    expect(project.tree.ServerScriptService.Server.$path).toBe('src/server')
+    expect(project.tree.ReplicatedStorage.Packages.$path).toBe('Packages')
+    expect(project.tree.ServerStorage.Stories.$path).toBe('src/stories')
+    expect(project.tree.Lighting.$path).toBe('src/lighting')
+    expect(project.tree.ReplicatedFirst.$path).toBe('src/replicated-first')
+
+    const rokit = fs.readFileSync(path.join(dir, 'rokit.toml'), 'utf8')
+    expect(rokit).toContain('rojo-rbx/rojo@7.6.1')
+    expect(rokit).toContain('Kampfkarren/selene@0.29.0')
+
+    const wally = fs.readFileSync(path.join(dir, 'wally.toml'), 'utf8')
+    expect(wally).toContain('name = "tolui-studios/kingdom-of-ash"')
+    expect(wally).toContain('vyon/profilestore@1.0.3')
+    expect(wally).toContain('ffrostflame/bytenet@0.4.6')
+    expect(wally).toContain('jsdotlua/react@17.2.1')
+    expect(wally).toContain('# FastCast')
 
     for (const file of [
       'CLAUDE.md',
       '.gitignore',
-      'stylua.toml',
+      '.luaurc',
       'selene.toml',
-      'src/shared/Hello.luau',
+      'stylua.toml',
       'src/server/init.server.luau',
-      'src/client/init.client.luau'
+      'src/server/SETTINGS.luau',
+      'src/server/Services/ExampleService.luau',
+      'src/client/init.client.luau',
+      'src/client/Controllers/ExampleController.luau',
+      'src/client/UI/App.luau',
+      'src/shared/Remotes/.gitkeep',
+      'src/stories/.gitkeep',
+      'src/lighting/.gitkeep',
+      'src/replicated-first/.gitkeep'
     ]) {
-      expect(fs.existsSync(path.join(dir, file))).toBe(true)
+      expect(fs.existsSync(path.join(dir, file)), file).toBe(true)
     }
+
+    const bootstrap = fs.readFileSync(path.join(dir, 'src/server/init.server.luau'), 'utf8')
+    expect(bootstrap).toContain('--!strict')
+    expect(bootstrap).toContain('script.Services:GetChildren()')
+    expect(bootstrap).toContain('service:Init()')
+    expect(bootstrap).toContain('service:Start()')
 
     const claude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8')
     expect(claude).toContain('# Kingdom of Ash')
     expect(claude).toContain('BRIDGE:START/DONE/ADD')
-    const hello = fs.readFileSync(path.join(dir, 'src/shared/Hello.luau'), 'utf8')
-    expect(hello).toContain('--!strict')
-    expect(hello).toContain('`Hello, {who}!`')
+    expect(claude).toContain('ByteNet')
+    expect(claude).toContain('no Knit/Flamework')
+
+    const gitignore = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')
+    expect(gitignore).toContain('Packages/')
+    expect(gitignore).toContain('wally.lock')
   })
 
   it('never overwrites existing files', () => {
@@ -57,6 +87,6 @@ describe('scaffoldRobloxGame', () => {
     const created = scaffoldRobloxGame(dir, 'Partial', 'Partial')
     expect(created).not.toContain('CLAUDE.md')
     expect(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8')).toBe('my own rules\n')
-    expect(fs.existsSync(path.join(dir, 'default.project.json'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'wally.toml'))).toBe(true)
   })
 })

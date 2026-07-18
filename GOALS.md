@@ -7,7 +7,7 @@
 ## Checklist
 
 - [x] Studio-wide Roblox/Luau/Rojo conventions (docs/GLOBAL-CLAUDE.md → ~/.claude/CLAUDE.md)
-- [x] New games scaffold a full Rojo project (project.json, src tree, strict Luau starters)
+- [x] New games scaffold the REAL studio stack (rokit, wally, ByteNet/ProfileStore/Replica, Init-Start bootstrap)
 - [x] Per-game CLAUDE.md template seeded with structure map + Bridge rules
 - [x] StyLua + Selene configs baked into every new game
 - [x] Roblox .gitignore for new games
