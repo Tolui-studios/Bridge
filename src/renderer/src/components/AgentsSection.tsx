@@ -7,6 +7,7 @@ import type {
 } from '@shared/types'
 import { useAgents } from '../hooks/useAgents'
 import { useVaultNotes } from '../hooks/useVault'
+import { useTeam } from '../hooks/useTeam'
 
 const SUBAGENT_PILL = 'Subagents'
 /** 'Agent' is the subagent tool in current Claude Code; 'Task' covers older CLIs. */
@@ -47,6 +48,10 @@ export default function AgentsSection({ game }: { game: Game }) {
     clearError
   } = useAgents(game.id)
   const [showForm, setShowForm] = useState(false)
+  const { team } = useTeam()
+  const teammateSessions = team.sessions.filter(
+    (s) => s.gameId === game.id && s.owner !== team.me
+  )
 
   const active = sessions.find((s) => s.id === activeId) ?? null
   const activeLive = active !== null && (active.status === 'running' || active.status === 'idle')
@@ -111,6 +116,46 @@ export default function AgentsSection({ game }: { game: Game }) {
             />
           ))}
         </ul>
+      )}
+
+      {teammateSessions.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+            Teammates&apos; agents
+          </p>
+          <ul className="space-y-1">
+            {teammateSessions.map((session) => (
+              <li
+                key={session.id}
+                className="flex items-center gap-2.5 rounded-md border border-neutral-900 px-3 py-2"
+                title={`${session.owner} — ${session.task}`}
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    session.status === 'running'
+                      ? 'bg-amber-400 animate-pulse'
+                      : session.status === 'idle'
+                        ? 'bg-sky-400'
+                        : session.status === 'done'
+                          ? 'bg-emerald-500'
+                          : session.status === 'error'
+                            ? 'bg-red-500'
+                            : 'bg-neutral-600'
+                  }`}
+                />
+                <span className="shrink-0 rounded-full bg-neutral-800 px-1.5 py-0.5 text-[9px] font-bold uppercase text-neutral-300">
+                  {session.owner.slice(0, 2)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-neutral-400">
+                  {session.task}
+                </span>
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-500">
+                  {session.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {active && (

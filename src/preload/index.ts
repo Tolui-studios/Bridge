@@ -10,6 +10,9 @@ import type {
   Game,
   GoalsMutation,
   GoalsState,
+  TeamConnectInput,
+  TeamNoteState,
+  TeamState,
   UsageSnapshot
 } from '../shared/types'
 
@@ -49,11 +52,26 @@ const api: BridgeApi = {
   openVault: () => ipcRenderer.invoke(IPC.VaultOpen),
   logDecision: (gameId: string, title: string, body: string) =>
     ipcRenderer.invoke(IPC.VaultLogDecision, gameId, title, body),
+  teamConnect: (input: TeamConnectInput) => ipcRenderer.invoke(IPC.TeamConnect, input),
+  teamDisconnect: () => ipcRenderer.invoke(IPC.TeamDisconnect),
+  getTeamState: () => ipcRenderer.invoke(IPC.TeamState),
+  setTeamFocus: (gameId: string | null) => ipcRenderer.invoke(IPC.TeamFocus, gameId),
+  getTeamNote: (gameId: string) => ipcRenderer.invoke(IPC.TeamNoteGet, gameId),
+  saveTeamNote: (gameId: string, content: string, baseVersion: number) =>
+    ipcRenderer.invoke(IPC.TeamNoteSave, gameId, content, baseVersion),
+  gitStatus: (gameId: string) => ipcRenderer.invoke(IPC.GitStatus, gameId),
+  gitPull: (gameId: string) => ipcRenderer.invoke(IPC.GitPull, gameId),
+  listWorktrees: (gameId: string) => ipcRenderer.invoke(IPC.GitWorktrees, gameId),
+  removeWorktree: (gameId: string, worktreePath: string, force: boolean) =>
+    ipcRenderer.invoke(IPC.GitWorktreeRemove, gameId, worktreePath, force),
+  createPr: (gameId: string, branch: string) => ipcRenderer.invoke(IPC.GitCreatePr, gameId, branch),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
   onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent),
   onUsageChanged: subscribe<UsageSnapshot>(IPC.EvUsageChanged),
-  onSettingsChanged: subscribe<AppSettings>(IPC.EvSettingsChanged)
+  onSettingsChanged: subscribe<AppSettings>(IPC.EvSettingsChanged),
+  onTeamChanged: subscribe<TeamState>(IPC.EvTeamChanged),
+  onTeamNote: subscribe<{ gameId: string; note: TeamNoteState }>(IPC.EvTeamNote)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)

@@ -1,6 +1,8 @@
 import type { Game } from '@shared/types'
 import UsageBar from './UsageBar'
+import TeamBlock from './TeamBlock'
 import { useSettings } from '../hooks/useVault'
+import { useTeam } from '../hooks/useTeam'
 
 interface Props {
   games: Game[]
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
+  const { team } = useTeam()
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40">
       <div className="border-b border-neutral-800 px-4 py-4">
@@ -19,6 +22,7 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {games.map((game) => {
           const active = game.id === selectedId
+          const others = team.users.filter((u) => u.gameId === game.id && u.name !== team.me)
           return (
             <button
               key={game.id}
@@ -29,7 +33,18 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
                   : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
               }`}
             >
-              <span className="block truncate text-sm font-medium">{game.name}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{game.name}</span>
+                {others.map((user) => (
+                  <span
+                    key={user.name}
+                    title={`${user.name} is working on this project${user.agents > 0 ? ` (${user.agents} agent${user.agents > 1 ? 's' : ''})` : ''}`}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[8px] font-bold uppercase text-amber-300 ring-1 ring-amber-500/40"
+                  >
+                    {user.name.slice(0, 2)}
+                  </span>
+                ))}
+              </span>
               <span className="block truncate text-[10px] text-neutral-600">{game.repoPath}</span>
             </button>
           )
@@ -38,6 +53,7 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
           <p className="px-2 py-3 text-xs text-neutral-600">No games registered yet.</p>
         )}
       </nav>
+      <TeamBlock />
       <VaultRow />
       <UsageBar />
       <div className="border-t border-neutral-800 p-2">

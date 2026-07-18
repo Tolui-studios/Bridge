@@ -31,6 +31,10 @@ export default function App() {
     }
   }, [loaded, selected, games])
 
+  useEffect(() => {
+    void window.bridge.setTeamFocus(selected?.id ?? null).catch(() => {})
+  }, [selected?.id])
+
   return (
     <div className="flex h-full bg-neutral-950 text-neutral-200">
       <Sidebar

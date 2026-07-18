@@ -1,12 +1,21 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc-channels'
-import type { AddGameInput, AgentLaunchConfig, Game, GoalsMutation } from '@shared/types'
+import type {
+  AddGameInput,
+  AgentLaunchConfig,
+  Game,
+  GoalsMutation,
+  TeamConnectInput
+} from '@shared/types'
 import type { GameRegistry } from './registry'
 import type { GoalsService } from './goals'
 import type { AgentService } from './agents'
 import type { UsageService } from './usage'
 import type { SettingsStore } from './settings'
 import type { VaultService } from './vault'
+import type { TeamSync } from './teamSync'
+import type { WorktreeService } from './worktrees'
+import { pull, pushBranchForPr, repoStatus } from './gitOps'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -14,8 +23,15 @@ export function registerIpc(
   agents: AgentService,
   usage: UsageService,
   settings: SettingsStore,
-  vault: VaultService
+  vault: VaultService,
+  team: TeamSync,
+  worktrees: WorktreeService
 ): void {
+  const requireGame = (gameId: string): Game => {
+    const game = registry.get(gameId)
+    if (!game) throw new Error('Unknown game id.')
+    return game
+  }
   const broadcastRegistry = (): void => {
     const games = registry.list()
     goals.syncWatchers(games)
@@ -28,6 +44,7 @@ export function registerIpc(
 
   ipcMain.handle(IPC.GamesAdd, (_event, input: AddGameInput) => {
     const result = registry.add(input)
+    team.onGameAdded(result.game)
     broadcastRegistry()
     return result
   })
@@ -48,9 +65,13 @@ export function registerIpc(
 
   ipcMain.handle(IPC.GoalsCreateTemplate, (_event, gameId: string) => goals.createTemplate(gameId))
 
-  ipcMain.handle(IPC.GoalsMutate, (_event, gameId: string, mutation: GoalsMutation) =>
-    goals.mutate(gameId, mutation)
-  )
+  ipcMain.handle(IPC.GoalsMutate, async (_event, gameId: string, mutation: GoalsMutation) => {
+    const game = requireGame(gameId)
+    // Team-synced games route through the shared canonical copy; otherwise
+    // the local single writer applies the edit directly.
+    const synced = await team.mutateGoals(game, mutation)
+    return synced ?? goals.mutate(gameId, mutation)
+  })
 
   ipcMain.handle(IPC.ShellOpenRepo, async (_event, gameId: string) => {
     const game = registry.get(gameId)
@@ -115,5 +136,30 @@ export function registerIpc(
     const game = registry.get(gameId)
     if (!game) throw new Error('Unknown game id.')
     vault.appendDecision(game, title, body)
+  })
+
+  ipcMain.handle(IPC.TeamConnect, (_event, input: TeamConnectInput) => team.connect(input))
+  ipcMain.handle(IPC.TeamDisconnect, () => team.disconnect())
+  ipcMain.handle(IPC.TeamState, () => team.state())
+  ipcMain.handle(IPC.TeamFocus, (_event, gameId: string | null) => team.setFocus(gameId))
+  ipcMain.handle(IPC.TeamNoteGet, (_event, gameId: string) => team.getNote(requireGame(gameId)))
+  ipcMain.handle(IPC.TeamNoteSave, (_event, gameId: string, content: string, baseVersion: number) =>
+    team.saveNote(requireGame(gameId), content, baseVersion)
+  )
+
+  ipcMain.handle(IPC.GitStatus, (_event, gameId: string) => repoStatus(requireGame(gameId)))
+  ipcMain.handle(IPC.GitPull, (_event, gameId: string) => pull(requireGame(gameId)))
+  ipcMain.handle(IPC.GitWorktrees, (_event, gameId: string) =>
+    worktrees.listWithUsage(requireGame(gameId))
+  )
+  ipcMain.handle(
+    IPC.GitWorktreeRemove,
+    (_event, gameId: string, worktreePath: string, force: boolean) =>
+      worktrees.remove(requireGame(gameId), worktreePath, force)
+  )
+  ipcMain.handle(IPC.GitCreatePr, async (_event, gameId: string, branch: string) => {
+    const url = await pushBranchForPr(requireGame(gameId), branch)
+    void shell.openExternal(url)
+    return url
   })
 }

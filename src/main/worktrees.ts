@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Game } from '@shared/types'
+import type { Game, WorktreeRow } from '@shared/types'
 
 const execFileAsync = promisify(execFile)
 const MAX_SLOTS = 32
@@ -31,6 +31,13 @@ export class WorktreeService {
   /** normalized worktree path -> session id currently holding it */
   private inUse = new Map<string, string>()
 
+  /**
+   * @param branchPrefix Prefix for agent branch names. Multi-user studios
+   * pass a per-user prefix (e.g. `agent-tofu`) so pushed branches never
+   * collide across machines. Directory names stay `agent-<n>` (local-only).
+   */
+  constructor(private readonly branchPrefix: string = 'agent') {}
+
   async acquire(game: Game, sessionId: string): Promise<WorktreeLease> {
     if (!fs.existsSync(path.join(game.repoPath, '.git'))) {
       return {
@@ -58,7 +65,7 @@ export class WorktreeService {
     for (let slot = 1; slot <= MAX_SLOTS; slot++) {
       const dir = path.join(game.worktreeRoot, `agent-${slot}`)
       if (taken.has(normalize(dir)) || fs.existsSync(dir)) continue
-      const branch = `agent-${slot}`
+      const branch = `${this.branchPrefix}-${slot}`
       try {
         try {
           await this.git(game.repoPath, ['worktree', 'add', dir, '-b', branch, game.defaultBranch])
@@ -79,6 +86,42 @@ export class WorktreeService {
   release(sessionId: string): void {
     for (const [key, holder] of this.inUse) {
       if (holder === sessionId) this.inUse.delete(key)
+    }
+  }
+
+  /** Worktrees under this game's worktreeRoot, with live-usage flags. */
+  async listWithUsage(game: Game): Promise<WorktreeRow[]> {
+    if (!fs.existsSync(path.join(game.repoPath, '.git'))) return []
+    await this.git(game.repoPath, ['worktree', 'prune'])
+    const existing = await this.list(game.repoPath)
+    return existing
+      .filter((w) => isUnder(w.path, game.worktreeRoot) && fs.existsSync(w.path))
+      .map((w) => ({
+        path: w.path,
+        name: path.basename(w.path),
+        branch: w.branch,
+        inUse: this.inUse.has(normalize(w.path))
+      }))
+  }
+
+  /** Remove a worktree (refuses while a live session holds it). */
+  async remove(game: Game, worktreePath: string, force: boolean): Promise<void> {
+    if (!isUnder(worktreePath, game.worktreeRoot)) {
+      throw new Error('That path is not one of this game’s worktrees.')
+    }
+    if (this.inUse.has(normalize(worktreePath))) {
+      throw new Error('A live agent session is using this worktree. Stop it first.')
+    }
+    const args = ['worktree', 'remove']
+    if (force) args.push('--force')
+    args.push(worktreePath)
+    try {
+      await this.git(game.repoPath, args)
+    } catch (err) {
+      const anyErr = err as { stderr?: string; message?: string }
+      throw new Error(
+        (anyErr.stderr || anyErr.message || 'git worktree remove failed').trim().slice(0, 300)
+      )
     }
   }
 

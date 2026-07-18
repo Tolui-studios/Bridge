@@ -3,11 +3,14 @@ import type { Game, GoalsMutation } from '@shared/types'
 import { progressOf } from '@shared/goalsParser'
 import { useGoals } from '../hooks/useGoals'
 import { useSettings } from '../hooks/useVault'
+import { useTeam } from '../hooks/useTeam'
 import { cleanIpcError } from '../lib/ipcError'
 import ProgressBar from './ProgressBar'
 import Checklist from './Checklist'
 import EditableText from './EditableText'
 import AgentsSection from './AgentsSection'
+import RepoBar from './RepoBar'
+import TeamNote from './TeamNote'
 
 interface Props {
   game: Game
@@ -18,6 +21,8 @@ interface Props {
 export default function GamePanel({ game, onEdit, onRemove }: Props) {
   const { state, refresh, createTemplate, mutate } = useGoals(game.id)
   const { settings } = useSettings()
+  const { team } = useTeam()
+  const occupants = team.users.filter((u) => u.gameId === game.id && u.name !== team.me)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionInfo, setActionInfo] = useState<string | null>(null)
@@ -97,6 +102,18 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
           )}
         </div>
       </header>
+
+      {occupants.length > 0 && (
+        <div className="mb-4 rounded-md border border-amber-800/60 bg-amber-950/30 px-3 py-2">
+          <p className="text-xs text-amber-300">
+            {occupants.map((u) => u.name).join(', ')}{' '}
+            {occupants.length === 1 ? 'is' : 'are'} working on this project right now — coordinate
+            before launching agents here to avoid merge collisions.
+          </p>
+        </div>
+      )}
+
+      <RepoBar game={game} />
 
       {actionError && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2">
@@ -212,6 +229,8 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
           </footer>
         </div>
       )}
+
+      <TeamNote gameId={game.id} />
 
       <AgentsSection game={game} />
 

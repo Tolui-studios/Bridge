@@ -86,6 +86,8 @@ export interface RunExtras {
 export interface AgentServiceHooks {
   /** Called whenever a session settles (result, idle, error, cancelled). */
   onSettled?: () => void
+  /** Mirror of every status change (team sync publishes these). */
+  onStatus?: (summary: AgentSessionSummary) => void
   /** Appended to the initial task so agents know the check-bar protocol. */
   taskFooter?: (gameId: string) => string
   /** Applies a BRIDGE marker to GOALS.md; returns a transcript note. */
@@ -475,7 +477,22 @@ export class AgentService {
   }
 
   private emitStatus(record: SessionRecord): void {
-    this.emit({ type: 'status', session: { ...record.summary } })
+    const summary = { ...record.summary }
+    this.emit({ type: 'status', session: summary })
+    try {
+      this.hooks.onStatus?.(summary)
+    } catch {
+      // Team mirroring must never break local sessions.
+    }
+  }
+
+  /** Count of live sessions (for presence). */
+  liveCount(): number {
+    let count = 0
+    for (const record of this.sessions.values()) {
+      if (isLive(record.summary.status)) count++
+    }
+    return count
   }
 
   private emit(event: AgentEvent): void {

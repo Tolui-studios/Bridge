@@ -33,6 +33,10 @@ const template = (name: string): string =>
 export class GoalsService {
   private watchers = new Map<string, FSWatcher>()
   private debounces = new Map<string, NodeJS.Timeout>()
+  /** Last content this process wrote per game — used to detect external edits. */
+  private lastWritten = new Map<string, string>()
+  /** Set by team sync: called when GOALS.md changed on disk from outside Bridge. */
+  onExternalEdit: ((game: Game, raw: string) => void) | null = null
 
   constructor(private readonly getGame: (id: string) => Game | undefined) {}
 
@@ -77,8 +81,24 @@ export class GoalsService {
     }
     const result = mutateGoalsContent(raw, mutation)
     if (!result.ok) throw new Error(result.error)
+    this.lastWritten.set(game.id, result.content)
     this.atomicWrite(filePath, result.content)
     return this.readState(game)
+  }
+
+  /** Overwrite the local GOALS.md with team-canonical content (sync projection). */
+  writeProjection(game: Game, content: string): GoalsState {
+    this.lastWritten.set(game.id, content)
+    this.atomicWrite(this.goalsPath(game), content)
+    return this.readState(game)
+  }
+
+  readRaw(game: Game): string | null {
+    try {
+      return fs.readFileSync(this.goalsPath(game), 'utf8')
+    } catch {
+      return null
+    }
   }
 
   private atomicWrite(filePath: string, content: string): void {
@@ -135,6 +155,12 @@ export class GoalsService {
         const state = this.readState(game)
         for (const wc of webContents.getAllWebContents()) {
           wc.send(IPC.EvGoalsChanged, state)
+        }
+        if (this.onExternalEdit) {
+          const raw = this.readRaw(game)
+          if (raw !== null && raw !== this.lastWritten.get(game.id)) {
+            this.onExternalEdit(game, raw)
+          }
         }
       }, 100)
     )

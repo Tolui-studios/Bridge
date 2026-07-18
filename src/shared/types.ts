@@ -128,6 +128,76 @@ export interface AppSettings {
   vaultPath: string | null
   /** Whether vaultPath currently exists on disk (computed at read time). */
   vaultExists: boolean
+  /** Team sync (Supabase) config presence — the key itself never leaves main. */
+  teamConfigured: boolean
+  teamUrl: string | null
+  teamEmail: string | null
+}
+
+export interface TeamConnectInput {
+  url: string
+  anonKey: string
+  email: string
+  password: string
+}
+
+export type TeamStatus = 'off' | 'connecting' | 'online' | 'error'
+
+export interface TeamUserPresence {
+  name: string
+  /** Local game id the user is focused on (resolved per machine), null if unknown here. */
+  gameId: string | null
+  /** Raw shared game key (normalized remote URL) for cross-machine identity. */
+  gameKey: string | null
+  /** Count of live agent sessions that user is running. */
+  agents: number
+}
+
+export interface TeamRemoteSession {
+  id: string
+  gameId: string | null
+  gameKey: string
+  owner: string
+  task: string
+  status: AgentStatus
+  numTurns: number | null
+  costUsd: number | null
+  updatedAt: number
+}
+
+export interface TeamState {
+  status: TeamStatus
+  reason: string | null
+  me: string | null
+  users: TeamUserPresence[]
+  sessions: TeamRemoteSession[]
+}
+
+export interface TeamNoteState {
+  content: string
+  version: number
+  updatedBy: string | null
+  updatedAt: number | null
+}
+
+export interface GitRepoStatus {
+  isRepo: boolean
+  branch: string | null
+  ahead: number
+  behind: number
+  hasUpstream: boolean
+  dirtyFiles: number
+  /** Epoch ms of the last fetch/pull (FETCH_HEAD mtime), null if never. */
+  lastPulledAt: number | null
+  remoteUrl: string | null
+  webUrl: string | null
+}
+
+export interface WorktreeRow {
+  path: string
+  name: string
+  branch: string | null
+  inUse: boolean
 }
 
 export interface VaultNoteRef {
@@ -180,9 +250,22 @@ export interface BridgeApi {
   listVaultNotes(gameId: string): Promise<VaultNoteRef[]>
   openVault(): Promise<void>
   logDecision(gameId: string, title: string, body: string): Promise<void>
+  teamConnect(input: TeamConnectInput): Promise<TeamState>
+  teamDisconnect(): Promise<TeamState>
+  getTeamState(): Promise<TeamState>
+  setTeamFocus(gameId: string | null): Promise<void>
+  getTeamNote(gameId: string): Promise<TeamNoteState | null>
+  saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
+  gitStatus(gameId: string): Promise<GitRepoStatus>
+  gitPull(gameId: string): Promise<string>
+  listWorktrees(gameId: string): Promise<WorktreeRow[]>
+  removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>
+  createPr(gameId: string, branch: string): Promise<string>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
   onUsageChanged(cb: (snapshot: UsageSnapshot) => void): () => void
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void
+  onTeamChanged(cb: (state: TeamState) => void): () => void
+  onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
 }

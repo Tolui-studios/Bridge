@@ -20,9 +20,22 @@ export const IPC = {
   VaultNotes: 'bridge:vault:notes',
   VaultOpen: 'bridge:vault:open',
   VaultLogDecision: 'bridge:vault:log-decision',
+  TeamConnect: 'bridge:team:connect',
+  TeamDisconnect: 'bridge:team:disconnect',
+  TeamState: 'bridge:team:state',
+  TeamFocus: 'bridge:team:focus',
+  TeamNoteGet: 'bridge:team:note-get',
+  TeamNoteSave: 'bridge:team:note-save',
+  GitStatus: 'bridge:git:status',
+  GitPull: 'bridge:git:pull',
+  GitWorktrees: 'bridge:git:worktrees',
+  GitWorktreeRemove: 'bridge:git:worktree-remove',
+  GitCreatePr: 'bridge:git:create-pr',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',
   EvUsageChanged: 'bridge:event:usage-changed',
-  EvSettingsChanged: 'bridge:event:settings-changed'
+  EvSettingsChanged: 'bridge:event:settings-changed',
+  EvTeamChanged: 'bridge:event:team-changed',
+  EvTeamNote: 'bridge:event:team-note'
 } as const
