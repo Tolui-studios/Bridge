@@ -46,6 +46,12 @@ create table public.sessions (
   updated_at timestamptz not null default now()
 );
 
+-- Team roster + activity heartbeat (drives the green/yellow/red dots).
+create table public.members (
+  name text primary key,
+  last_active timestamptz not null default now()
+);
+
 -- Keep updated_at fresh automatically.
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -62,21 +68,33 @@ alter table public.games enable row level security;
 alter table public.goals enable row level security;
 alter table public.notes enable row level security;
 alter table public.sessions enable row level security;
+alter table public.members enable row level security;
 create policy "team all" on public.games for all to authenticated using (true) with check (true);
 create policy "team all" on public.goals for all to authenticated using (true) with check (true);
 create policy "team all" on public.notes for all to authenticated using (true) with check (true);
 create policy "team all" on public.sessions for all to authenticated using (true) with check (true);
+create policy "team all" on public.members for all to authenticated using (true) with check (true);
 
 -- Realtime change feeds.
 alter publication supabase_realtime add table public.games;
 alter publication supabase_realtime add table public.goals;
 alter publication supabase_realtime add table public.notes;
 alter publication supabase_realtime add table public.sessions;
+alter publication supabase_realtime add table public.members;
 ```
 
-> **Already ran the SQL before the `games` line was added?** Run just this in the SQL editor:
-> `alter publication supabase_realtime add table public.games;`
-> (Without it, the shared game list still works — it refreshes when teammates join/leave instead of instantly.)
+> **Set the project up before the `games`/`members` additions?** Run just this migration in the SQL editor:
+>
+> ```sql
+> create table public.members (
+>   name text primary key,
+>   last_active timestamptz not null default now()
+> );
+> alter table public.members enable row level security;
+> create policy "team all" on public.members for all to authenticated using (true) with check (true);
+> alter publication supabase_realtime add table public.games;
+> alter publication supabase_realtime add table public.members;
+> ```
 
 ## 3. Turn off public signups
 

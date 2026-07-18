@@ -51,6 +51,17 @@ interface PresencePayload {
   agents: number
 }
 
+interface RawPresence {
+  name: string
+  gameKey: string | null
+  agents: number
+}
+
+const IDLE_AFTER_MS = 10 * 60_000
+const AWAY_AFTER_MS = 2 * 60 * 60_000
+const TOUCH_THROTTLE_MS = 45_000
+const TICK_MS = 60_000
+
 export interface TeamSyncDeps {
   settings: SettingsStore
   authStorePath: string
@@ -75,11 +86,16 @@ export class TeamSync {
   private reason: string | null = null
   private me: string | null = null
   private focusGameId: string | null = null
-  private users: TeamUserPresence[] = []
+  private presence: RawPresence[] = []
   private sessions = new Map<string, TeamRemoteSession>()
   private gameKeys = new Map<string, string | null>()
   /** Shared game index: key (normalized remote) -> display name. */
   private teamGames = new Map<string, string>()
+  /** Team roster: name -> last_active epoch ms (from the members table). */
+  private members = new Map<string, number>()
+  private lastTouchAt = 0
+  private tickTimer: NodeJS.Timeout | null = null
+  private tickCount = 0
 
   constructor(private readonly deps: TeamSyncDeps) {}
 
@@ -154,17 +170,57 @@ export class TeamSync {
   }
 
   state(): TeamState {
+    const presenceByName = new Map(this.presence.map((p) => [p.name, p]))
+    const names = new Set([...presenceByName.keys(), ...this.members.keys()])
+    const users: TeamUserPresence[] = [...names].map((name) => {
+      const present = presenceByName.get(name)
+      const online = present !== undefined
+      const lastActiveAt = this.members.get(name) ?? null
+      const idleMs = lastActiveAt === null ? null : Date.now() - lastActiveAt
+      const activity: TeamUserPresence['activity'] = !online
+        ? 'away'
+        : idleMs === null
+          ? 'active'
+          : idleMs >= AWAY_AFTER_MS
+            ? 'away'
+            : idleMs >= IDLE_AFTER_MS
+              ? 'idle'
+              : 'active'
+      return {
+        name,
+        online,
+        activity,
+        lastActiveAt,
+        gameId: present?.gameKey ? this.gameIdForKey(present.gameKey) : null,
+        gameKey: present?.gameKey ?? null,
+        agents: present?.agents ?? 0
+      }
+    })
+    users.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
     return {
       status: this.status,
       reason: this.reason,
       me: this.me,
-      users: [...this.users],
+      users,
       sessions: [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt),
       games: [...this.teamGames.entries()].map(([key, name]) => {
         const gameId = this.gameIdForKey(key)
         return { key, name, linked: gameId !== null, gameId }
       })
     }
+  }
+
+  /** Record that this operator did something (drives the activity dots). */
+  touchActivity(): void {
+    if (this.status !== 'online' || !this.client || !this.me) return
+    const now = Date.now()
+    this.members.set(this.me, now)
+    if (now - this.lastTouchAt < TOUCH_THROTTLE_MS) return
+    this.lastTouchAt = now
+    void this.client
+      .from('members')
+      .upsert({ name: this.me, last_active: new Date(now).toISOString() }, { onConflict: 'name' })
+      .then(() => {})
   }
 
   getTeamGame(key: string): { key: string; name: string } | null {
@@ -204,6 +260,7 @@ export class TeamSync {
 
   async setFocus(gameId: string | null): Promise<void> {
     this.focusGameId = gameId
+    this.touchActivity()
     await this.trackPresence()
   }
 
@@ -247,6 +304,7 @@ export class TeamSync {
         .select('game_key')
       if (error) throw new Error(error.message)
       if (data && data.length > 0) {
+        this.touchActivity()
         return this.deps.goals.writeProjection(game, result.content)
       }
       // Version moved under us — loop re-reads and re-applies (expectText
@@ -325,6 +383,7 @@ export class TeamSync {
     if (!data || data.length === 0) {
       throw new Error('The note was just changed by someone else — reload it first.')
     }
+    this.touchActivity()
     return noteState(data[0] as NoteRow)
   }
 
@@ -332,6 +391,7 @@ export class TeamSync {
 
   publishSession(summary: AgentSessionSummary): void {
     if (this.status !== 'online' || !this.client) return
+    this.touchActivity()
     void (async () => {
       try {
         const game = this.deps.getGame(summary.gameId)
@@ -406,12 +466,47 @@ export class TeamSync {
     await this.resolveAllGameKeys()
     await this.registerGames()
     await this.loadTeamGames()
+    await this.loadMembers()
     await this.loadInitialSessions()
     await this.pullAllGoals()
     // Await the channel's first outcome so connect() returns a truthful
     // final status instead of racing the subscription (the "could not
     // connect but actually signed in" bug).
     await this.openChannel()
+    this.touchActivity()
+    this.startTick()
+  }
+
+  /** Periodic recompute so idle/away dots change even without events. */
+  private startTick(): void {
+    this.stopTick()
+    this.tickTimer = setInterval(() => {
+      this.tickCount++
+      if (this.tickCount % 5 === 0) {
+        void Promise.all([this.loadMembers(), this.loadTeamGames()]).then(() => this.publishState())
+      } else {
+        this.publishState()
+      }
+    }, TICK_MS)
+  }
+
+  private stopTick(): void {
+    if (this.tickTimer) clearInterval(this.tickTimer)
+    this.tickTimer = null
+  }
+
+  private async loadMembers(): Promise<void> {
+    if (!this.client) return
+    try {
+      const { data } = await this.client.from('members').select('name,last_active')
+      const rows = (data ?? []) as { name: string; last_active: string | null }[]
+      this.members = new Map(
+        rows.map((row) => [row.name, row.last_active ? Date.parse(row.last_active) : 0])
+      )
+    } catch {
+      // Members table may not exist yet (older SQL setup) — dots degrade
+      // to online=green, offline users simply absent.
+    }
   }
 
   private openChannel(): Promise<void> {
@@ -443,10 +538,23 @@ export class TeamSync {
       channel.on('presence', { event: 'sync' }, () => {
         this.readPresence(channel)
         this.publishState()
-        // Fallback freshness for the shared game list (covers projects where
-        // the games table was not added to the realtime publication).
-        void this.loadTeamGames().then(() => this.publishState())
+        // Fallback freshness for the shared game list and roster (covers
+        // projects where these tables are not in the realtime publication).
+        void Promise.all([this.loadTeamGames(), this.loadMembers()]).then(() =>
+          this.publishState()
+        )
       })
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'members' },
+        (payload) => {
+          const row = payload.new as Partial<{ name: string; last_active: string }>
+          if (row?.name) {
+            this.members.set(row.name, row.last_active ? Date.parse(row.last_active) : Date.now())
+            this.publishState()
+          }
+        }
+      )
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'games' },
@@ -510,18 +618,17 @@ export class TeamSync {
 
   private readPresence(channel: RealtimeChannel): void {
     const state = channel.presenceState<PresencePayload>()
-    const users: TeamUserPresence[] = []
+    const presence: RawPresence[] = []
     for (const entries of Object.values(state)) {
       const latest = entries[entries.length - 1]
       if (!latest) continue
-      users.push({
+      presence.push({
         name: latest.name,
         gameKey: latest.gameKey,
-        gameId: latest.gameKey ? this.gameIdForKey(latest.gameKey) : null,
         agents: latest.agents ?? 0
       })
     }
-    this.users = users
+    this.presence = presence
   }
 
   private async onGoalsChange(row: Partial<GoalsRow>): Promise<void> {
@@ -645,6 +752,7 @@ export class TeamSync {
   }
 
   private async teardown(): Promise<void> {
+    this.stopTick()
     if (this.channel && this.client) {
       try {
         await this.client.removeChannel(this.channel)
@@ -654,9 +762,10 @@ export class TeamSync {
     }
     this.channel = null
     this.client = null
-    this.users = []
+    this.presence = []
     this.sessions.clear()
     this.teamGames.clear()
+    this.members.clear()
     this.me = null
   }
 

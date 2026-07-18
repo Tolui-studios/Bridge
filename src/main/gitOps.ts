@@ -49,6 +49,11 @@ export function parseAheadBehind(output: string): { ahead: number; behind: numbe
 }
 
 export async function remoteUrl(repoPath: string): Promise<string | null> {
+  // Only a repo ROOT has an identity of its own. Without this guard, git -C
+  // walks up ancestor directories, so a plain folder nested inside another
+  // repo (like the sample fixture inside Bridge) would inherit the parent's
+  // remote and collide with it in the team's shared game index.
+  if (!fs.existsSync(path.join(repoPath, '.git'))) return null
   try {
     const { stdout } = await git(repoPath, ['remote', 'get-url', 'origin'])
     const url = stdout.trim()

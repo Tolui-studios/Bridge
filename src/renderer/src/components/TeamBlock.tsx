@@ -11,6 +11,26 @@ const STATUS_DOT: Record<TeamState['status'], string> = {
   error: 'bg-red-500'
 }
 
+const ACTIVITY_DOT: Record<TeamState['users'][number]['activity'], string> = {
+  active: 'bg-emerald-500',
+  idle: 'bg-yellow-400',
+  away: 'bg-red-500'
+}
+
+function activityTitle(user: TeamState['users'][number]): string {
+  const ago = (ms: number): string => {
+    const mins = Math.round(ms / 60000)
+    if (mins < 60) return `${mins}m`
+    return `${Math.round(mins / 60)}h`
+  }
+  const last =
+    user.lastActiveAt !== null ? ` · last active ${ago(Date.now() - user.lastActiveAt)} ago` : ''
+  if (!user.online) return `Offline${last}`
+  if (user.activity === 'active') return 'Active now'
+  if (user.activity === 'idle') return `Connected, idle${last}`
+  return `Connected but inactive 2h+${last}`
+}
+
 /** Sidebar block: team sync status, online teammates, connect/disconnect. */
 export default function TeamBlock() {
   const { team, connect, disconnect, error, clearError } = useTeam()
@@ -35,16 +55,31 @@ export default function TeamBlock() {
         <div className="space-y-1">
           {team.users.map((user) => (
             <div key={user.name} className="flex items-center gap-1.5 text-[11px]">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${ACTIVITY_DOT[user.activity]}`}
+                title={activityTitle(user)}
+              />
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-neutral-700 text-[8px] font-bold uppercase text-neutral-200">
                 {user.name.slice(0, 2)}
               </span>
-              <span className={user.name === team.me ? 'text-neutral-200' : 'text-neutral-400'}>
+              <span
+                className={
+                  !user.online
+                    ? 'text-neutral-600'
+                    : user.name === team.me
+                      ? 'text-neutral-200'
+                      : 'text-neutral-400'
+                }
+              >
                 {user.name}
                 {user.name === team.me ? ' (you)' : ''}
               </span>
               {user.agents > 0 && (
-                <span className="text-[9px] text-amber-400">{user.agents} agent{user.agents > 1 ? 's' : ''}</span>
+                <span className="text-[9px] text-amber-400">
+                  {user.agents} agent{user.agents > 1 ? 's' : ''}
+                </span>
               )}
+              {!user.online && <span className="text-[9px] text-neutral-700">offline</span>}
             </div>
           ))}
           <button

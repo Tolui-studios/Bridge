@@ -144,8 +144,16 @@ export interface TeamConnectInput {
 
 export type TeamStatus = 'off' | 'connecting' | 'online' | 'error'
 
+/** green = connected + recently active; yellow = connected, idle 10m+; red = disconnected or idle 2h+. */
+export type TeamActivity = 'active' | 'idle' | 'away'
+
 export interface TeamUserPresence {
   name: string
+  /** Present in the realtime presence channel right now. */
+  online: boolean
+  activity: TeamActivity
+  /** Epoch ms of their last recorded action, null if unknown. */
+  lastActiveAt: number | null
   /** Local game id the user is focused on (resolved per machine), null if unknown here. */
   gameId: string | null
   /** Raw shared game key (normalized remote URL) for cross-machine identity. */
