@@ -528,7 +528,15 @@ export class TeamSync {
       // silently forever. getSession() refreshes when needed.
       const { data, error } = await client.auth.getSession()
       if (error || !data.session) {
-        this.setStatus('error', 'Session expired — sign in to the team again.')
+        // A refresh that failed because the NETWORK is down (dev logs show
+        // real ENOTFOUND drops on this machine) is retryable — only a truly
+        // dead refresh token warrants demanding a re-login.
+        const message = error?.message ?? ''
+        if (/fetch|network|ENOTFOUND|ECONN|timeout/i.test(message)) {
+          this.scheduleReconnect()
+        } else {
+          this.setStatus('error', 'Session expired — sign in to the team again.')
+        }
         return
       }
       try {
