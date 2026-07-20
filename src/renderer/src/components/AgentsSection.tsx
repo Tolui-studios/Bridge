@@ -5,6 +5,7 @@ import type {
   AgentStreamItem,
   Game
 } from '@shared/types'
+import TestChecklist from './TestChecklist'
 import { ROBLOX_MCP_TOOL_GLOB } from '@shared/robloxMcp'
 import { useAgents } from '../hooks/useAgents'
 import { useVaultNotes } from '../hooks/useVault'
@@ -76,6 +77,25 @@ export default function AgentsSection({ game }: { game: Game }) {
     (s) => s.gameId === game.id && s.owner !== team.me
   )
 
+  // Pop the checklist the moment a run finishes with steps to verify, so the
+  // handoff isn't something the operator has to go looking for. Each session
+  // only auto-opens once per app run.
+  const [testFor, setTestFor] = useState<AgentSessionSummary | null>(null)
+  const autoShown = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const finished = sessions.find(
+      (s) =>
+        s.status !== 'running' &&
+        s.status !== 'idle' &&
+        s.testSteps.length > 0 &&
+        !autoShown.current.has(s.id)
+    )
+    if (finished) {
+      autoShown.current.add(finished.id)
+      setTestFor(finished)
+    }
+  }, [sessions])
+
   const active = sessions.find((s) => s.id === activeId) ?? null
   const activeLive = active !== null && (active.status === 'running' || active.status === 'idle')
   const liveCount = sessions.filter((s) => s.status === 'running' || s.status === 'idle').length
@@ -136,10 +156,13 @@ export default function AgentsSection({ game }: { game: Game }) {
                   ? () => cancel(session.id)
                   : null
               }
+              onShowTests={session.testSteps.length > 0 ? () => setTestFor(session) : null}
             />
           ))}
         </ul>
       )}
+
+      {testFor && <TestChecklist session={testFor} onClose={() => setTestFor(null)} />}
 
       {teammateSessions.length > 0 && (
         <div className="mb-3">
@@ -395,12 +418,14 @@ function SessionRow({
   session,
   active,
   onSelect,
-  onStop
+  onStop,
+  onShowTests
 }: {
   session: AgentSessionSummary
   active: boolean
   onSelect: () => void
   onStop: (() => void) | null
+  onShowTests: (() => void) | null
 }) {
   const style = STATUS_STYLE[session.status]
   const meta: string[] = [new Date(session.startedAt).toLocaleTimeString()]
@@ -431,6 +456,18 @@ function SessionRow({
           {session.status}
         </span>
         <span className="shrink-0 text-[10px] text-neutral-600">{meta.join(' · ')}</span>
+        {onShowTests && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onShowTests()
+            }}
+            title={`${session.testSteps.length} step${session.testSteps.length > 1 ? 's' : ''} to verify in Studio`}
+            className="shrink-0 rounded border border-sky-900 px-1.5 py-0.5 text-[10px] text-sky-400 transition-colors hover:bg-sky-950/40"
+          >
+            Test ({session.testSteps.length})
+          </button>
+        )}
         {onStop && (
           <span
             onClick={(e) => {

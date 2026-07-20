@@ -110,7 +110,14 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
     )}\n`
   )
 
-  write('.gitignore', ['Packages/', 'sourcemap.json', 'wally.lock', '.env.local', ''].join('\n'))
+  // DevPackages/ is Wally's [dev-dependencies] output. Leaving it untracked
+  // makes every worktree permanently "dirty": `git worktree remove` refuses,
+  // the uncommitted count is inflated by hundreds of files, and a commit-all
+  // would sweep the whole vendored tree into the branch.
+  write(
+    '.gitignore',
+    ['Packages/', 'DevPackages/', 'sourcemap.json', 'wally.lock', '.env.local', ''].join('\n')
+  )
   write('selene.toml', "std = 'roblox'\n")
   write(
     'stylua.toml',

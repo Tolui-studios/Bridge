@@ -242,7 +242,14 @@ export async function repoStatus(game: Game): Promise<GitRepoStatus> {
 
   let dirtyFiles = 0
   try {
-    const { stdout } = await git(game.repoPath, ['status', '--porcelain'])
+    // --untracked-files=all is what makes this number mean something: the
+    // default collapses an untracked DIRECTORY into a single line, so a new
+    // folder holding 200 files counted as "1 uncommitted".
+    const { stdout } = await git(game.repoPath, [
+      'status',
+      '--porcelain',
+      '--untracked-files=all'
+    ])
     dirtyFiles = stdout.split(/\r?\n/).filter((line) => line.trim().length > 0).length
   } catch {
     // Ignore.
@@ -310,6 +317,16 @@ export async function moveRepoToOrg(game: Game, org: string, slug: string): Prom
 
 /** Fast-forward pull; throws with git's message when it cannot fast-forward. */
 export async function pull(game: Game): Promise<string> {
+  // Without an upstream, `git pull` fails with a multi-paragraph hint that
+  // reads like a crash. Say the one useful sentence instead.
+  try {
+    await git(game.repoPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
+  } catch {
+    const branch = (await git(game.repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+    throw new Error(
+      `${branch || 'This branch'} isn't tracking anything on origin, so there is nothing to pull. Push it once with \`git push -u origin ${branch || '<branch>'}\` and Pull will work from then on.`
+    )
+  }
   try {
     const { stdout, stderr } = await git(game.repoPath, ['pull', '--ff-only'])
     return (stdout + stderr).trim() || 'Already up to date.'

@@ -96,6 +96,12 @@ export interface AgentSessionSummary {
   costUsd: number | null
   numTurns: number | null
   error: string | null
+  /**
+   * Steps the operator should perform in Studio to verify this run, reported
+   * by the agent via `BRIDGE:TEST`. Agents cannot playtest, so this is how a
+   * run hands verification back to a human.
+   */
+  testSteps: string[]
 }
 
 export type AgentStreamKind =

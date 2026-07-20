@@ -28,7 +28,8 @@ const summary: AgentSessionSummary = {
   endedAt: 1180000,
   costUsd: 0.1234,
   numTurns: 7,
-  error: null
+  error: null,
+  testSteps: []
 }
 
 beforeAll(() => {

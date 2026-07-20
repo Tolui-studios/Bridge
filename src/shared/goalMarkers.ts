@@ -8,13 +8,18 @@ import type { ChecklistItem } from './types'
  *   BRIDGE:START <item text>   — began working on a checklist item
  *   BRIDGE:DONE <item text>    — completed it
  *   BRIDGE:ADD <item text>     — record newly discovered work
+ *   BRIDGE:TEST <step>         — one step for the operator to verify in Studio
+ *
+ * TEST is the odd one out: it never touches GOALS.md. Agents cannot run the
+ * game, so instead of pretending to playtest they hand back the steps a human
+ * should perform, which Bridge collects into a checklist for the operator.
  */
 export interface BridgeMarker {
-  kind: 'done' | 'start' | 'add'
+  kind: 'done' | 'start' | 'add' | 'test'
   text: string
 }
 
-const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD)\s+(.+?)\s*$/gim
+const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD|TEST)\s+(.+?)\s*$/gim
 
 export function parseBridgeMarkers(text: string): BridgeMarker[] {
   const markers: BridgeMarker[] = []

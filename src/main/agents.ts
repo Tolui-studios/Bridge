@@ -171,7 +171,8 @@ export class AgentService {
     private readonly hooks: AgentServiceHooks = {}
   ) {
     for (const persisted of this.store.loadAllSummaries()) {
-      const summary = { ...persisted }
+      // testSteps post-dates earlier sessions on disk.
+      const summary = { ...persisted, testSteps: persisted.testSteps ?? [] }
       if (summary.status === 'running' || summary.status === 'idle') {
         // The app died while this session was live.
         summary.status = 'cancelled'
@@ -209,7 +210,8 @@ export class AgentService {
         endedAt: null,
         costUsd: null,
         numTurns: null,
-        error: null
+        error: null,
+        testSteps: []
       },
       items: [],
       abort: new AbortController(),
@@ -490,8 +492,18 @@ export class AgentService {
   }
 
   private applyMarkers(record: SessionRecord, text: string): void {
-    if (!this.hooks.applyMarker) return
     for (const marker of parseBridgeMarkers(text)) {
+      // TEST steps are for the operator, not GOALS.md — collect, don't apply.
+      if (marker.kind === 'test') {
+        const step = marker.text.trim()
+        if (step && !record.summary.testSteps.includes(step)) {
+          record.summary.testSteps.push(step)
+          this.push(record, 'goal', `test step: ${step}`)
+          this.emitStatus(record)
+        }
+        continue
+      }
+      if (!this.hooks.applyMarker) continue
       try {
         const note = this.hooks.applyMarker(record.summary.gameId, marker)
         if (/^[✓→+]/.test(note)) record.goalNotes.push(note)

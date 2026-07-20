@@ -39,6 +39,19 @@ export default function RepoBar({ game }: { game: Game }) {
     setError(null)
     setShowWorktrees(false)
     refresh()
+
+    // Git state changes underneath us constantly — agents commit, the operator
+    // edits in VS Code, Wally drops packages in. Without this the counts are
+    // whatever they were when the panel mounted, which reads as "the numbers
+    // are wrong". Refresh on focus (cheap, covers alt-tabbing back from an
+    // editor) and on a slow timer as a backstop.
+    const onFocus = (): void => refresh()
+    window.addEventListener('focus', onFocus)
+    const timer = setInterval(refresh, 15_000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      clearInterval(timer)
+    }
   }, [refresh])
 
   if (!status?.isRepo) return null
@@ -101,7 +114,10 @@ export default function RepoBar({ game }: { game: Game }) {
       </div>
 
       {(message || error) && (
-        <p className={`mt-2 truncate font-mono text-[11px] ${error ? 'text-red-400' : 'text-neutral-500'}`} title={error ?? message ?? ''}>
+        <p
+          className={`mt-2 whitespace-pre-wrap break-words font-mono text-[11px] ${error ? 'text-red-400' : 'text-neutral-500'}`}
+          title={error ?? message ?? ''}
+        >
           {error ?? message}
         </p>
       )}

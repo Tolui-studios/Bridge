@@ -58,7 +58,15 @@ export function buildTaskFooter(goals: GoalsPort, gameId: string): string {
     'BRIDGE:START <item>   when you begin a checklist item',
     'BRIDGE:DONE <item>    when you complete one',
     'BRIDGE:ADD <item>     to record newly discovered work',
-    'Do not edit GOALS.md yourself — Bridge owns that file.'
+    'Do not edit GOALS.md yourself — Bridge owns that file.',
+    '',
+    'Testing: you cannot run or playtest the game, and you must not claim to have.',
+    'Never state that you played, ran, or verified behaviour in-game.',
+    'Instead, hand the operator the steps to verify it themselves, one per line:',
+    'BRIDGE:TEST <a single concrete step, in the order it should be performed>',
+    'Write each step so it can be followed without reading your reply: name the',
+    'place/UI to open, the exact action, and the observable result that means it passed.',
+    'Emit these near the end of your final message, after the work is complete.'
   ].join('\n')
   try {
     const state = goals.readStateById(gameId)
