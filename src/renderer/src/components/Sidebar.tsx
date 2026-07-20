@@ -4,6 +4,7 @@ import UsageBar from './UsageBar'
 import TeamBlock from './TeamBlock'
 import { useSettings } from '../hooks/useVault'
 import { useTeam } from '../hooks/useTeam'
+import { useUpdate } from '../hooks/useUpdate'
 import { cleanIpcError } from '../lib/ipcError'
 
 interface Props {
@@ -19,7 +20,10 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
     <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40">
       <div className="border-b border-neutral-800 px-4 py-4">
         <h1 className="text-lg font-semibold tracking-[0.35em] text-neutral-100">BRIDGE</h1>
-        <p className="text-xs text-neutral-500">mission control</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-xs text-neutral-500">mission control</p>
+          <VersionTag />
+        </div>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {games.map((game) => {
@@ -68,6 +72,26 @@ export default function Sidebar({ games, selectedId, onSelect, onAdd }: Props) {
         </button>
       </div>
     </aside>
+  )
+}
+
+/** Running version, plus a dot when a newer one is downloaded and waiting. */
+function VersionTag() {
+  const update = useUpdate()
+  if (!update) return null
+
+  const pending = update.status === 'ready'
+  const title = pending
+    ? `Version ${update.currentVersion} — ${update.version} installs when you close Bridge`
+    : update.status === 'disabled'
+      ? `Version ${update.currentVersion} — auto-update off (${update.reason ?? 'unavailable'})`
+      : `Version ${update.currentVersion}`
+
+  return (
+    <span title={title} className="flex shrink-0 items-center gap-1 text-[10px] text-neutral-600">
+      v{update.currentVersion}
+      {pending && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+    </span>
   )
 }
 

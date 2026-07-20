@@ -16,7 +16,12 @@ const { autoUpdater } = electronUpdater
  * `latest.yml` leaves Bridge running normally with a reason on the state.
  */
 export class UpdaterService {
-  private state: UpdateState = { status: 'idle', version: null, reason: null }
+  private state: UpdateState = {
+    status: 'idle',
+    currentVersion: app.getVersion(),
+    version: null,
+    reason: null
+  }
 
   get(): UpdateState {
     return { ...this.state }
@@ -67,6 +72,8 @@ export class UpdaterService {
     // check must not linger once a later status supersedes it.
     this.state = {
       status: patch.status ?? this.state.status,
+      // Constant for the life of the process — never cleared by a transition.
+      currentVersion: this.state.currentVersion,
       version: patch.version ?? null,
       reason: patch.reason ?? null
     }

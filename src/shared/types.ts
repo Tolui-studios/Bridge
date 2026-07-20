@@ -282,6 +282,9 @@ export interface UsageSnapshot {
  */
 export interface UpdateState {
   status: 'idle' | 'disabled' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  /** The version running right now — what the sidebar shows. */
+  currentVersion: string
+  /** The version waiting to install, when one is. */
   version: string | null
   reason: string | null
 }

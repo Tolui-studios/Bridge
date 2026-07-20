@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import type { UpdateState } from '@shared/types'
+import { useUpdate } from '../hooks/useUpdate'
 
 /**
  * A quiet strip shown only once an update has finished downloading. Updates
@@ -7,15 +6,7 @@ import type { UpdateState } from '@shared/types'
  * changes the version is never a surprise.
  */
 export default function UpdateBanner() {
-  const [state, setState] = useState<UpdateState | null>(null)
-
-  useEffect(() => {
-    void window.bridge
-      .getUpdateState()
-      .then(setState)
-      .catch(() => {})
-    return window.bridge.onUpdateChanged(setState)
-  }, [])
+  const state = useUpdate()
 
   if (state?.status !== 'ready') return null
 
