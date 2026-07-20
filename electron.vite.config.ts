@@ -15,7 +15,10 @@ export default defineConfig({
         // The Agent SDK must stay a real node_modules import: it locates and
         // spawns its bundled CLI relative to its own file path, which breaks
         // if it gets inlined into out/main.
-        external: ['@anthropic-ai/claude-agent-sdk']
+        //
+        // electron-updater is CJS and lazy-`require`s its provider modules by
+        // name, which a bundler cannot follow — inlining it breaks at runtime.
+        external: ['@anthropic-ai/claude-agent-sdk', 'electron-updater']
       }
     }
   },

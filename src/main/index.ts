@@ -13,6 +13,7 @@ import { SettingsStore } from './settings'
 import { VaultService } from './vault'
 import { TeamSync } from './teamSync'
 import { ToolchainService } from './toolchain'
+import { UpdaterService } from './updater'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
 import { registerIpc } from './ipc'
 
@@ -99,12 +100,15 @@ if (!gotLock) {
       }
     })
     agentsRef = agents
-    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain)
+    const updater = new UpdaterService()
+    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain, updater)
     goals.syncWatchers(registry.list())
     usage.start()
     void team.restore()
 
     createWindow()
+    // After the window exists, so the first state event has somewhere to land.
+    updater.start()
 
     app.on('second-instance', () => {
       const [win] = BrowserWindow.getAllWindows()

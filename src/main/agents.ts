@@ -2,6 +2,7 @@ import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
+  McpServerConfig,
   Query,
   SDKMessage,
   SDKRateLimitInfo,
@@ -10,6 +11,7 @@ import type {
 import { IPC } from '@shared/ipc-channels'
 import { parseBridgeMarkers } from '@shared/goalMarkers'
 import type { BridgeMarker } from '@shared/goalMarkers'
+import { ROBLOX_MCP_PACKAGE, ROBLOX_MCP_SERVER, wantsRobloxMcp } from '@shared/robloxMcp'
 import type {
   AgentEvent,
   AgentLaunchConfig,
@@ -27,6 +29,24 @@ const MAX_ITEM_TEXT = 2000
 const MAX_TOOL_RESULT_TEXT = 400
 const KEEP_SESSIONS_PER_GAME = 50
 const PERSIST_DEBOUNCE_MS = 1500
+
+/**
+ * Studio MCP servers for this launch, or `{}` when the whitelist didn't ask
+ * for them — an unused entry would still spawn an npx process per session.
+ *
+ * Windows can't spawn the `npx.cmd` shim directly (Node dropped the implicit
+ * shell for `.cmd` in the CVE-2024-27980 fix), so it goes through `cmd /c`.
+ */
+function mcpServersFor(allowedTools: readonly string[]): Record<string, McpServerConfig> {
+  if (!wantsRobloxMcp(allowedTools)) return {}
+  const args = ['-y', ROBLOX_MCP_PACKAGE, '--auto-install-plugin']
+  return {
+    [ROBLOX_MCP_SERVER]:
+      process.platform === 'win32'
+        ? { type: 'stdio', command: 'cmd', args: ['/c', 'npx', ...args] }
+        : { type: 'stdio', command: 'npx', args }
+  }
+}
 
 /** Push-based async iterable used as the SDK's streaming prompt input. */
 class AsyncQueue<T> implements AsyncIterable<T> {
@@ -323,6 +343,9 @@ export class AgentService {
           permissionMode: record.summary.permissionMode,
           allowedTools: record.summary.allowedTools,
           ...(record.summary.model ? { model: record.summary.model } : {}),
+          // Studio-side work (instances, generated meshes, asset uploads) runs
+          // through this; only spawned when the whitelist opted in.
+          mcpServers: mcpServersFor(record.summary.allowedTools),
           // Load the memory layers: ~/.claude/CLAUDE.md (studio-wide) and the
           // workspace CLAUDE.md — the SDK loads neither by default.
           settingSources: ['user', 'project'],

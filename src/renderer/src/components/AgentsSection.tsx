@@ -5,6 +5,7 @@ import type {
   AgentStreamItem,
   Game
 } from '@shared/types'
+import { ROBLOX_MCP_TOOL_GLOB } from '@shared/robloxMcp'
 import { useAgents } from '../hooks/useAgents'
 import { useVaultNotes } from '../hooks/useVault'
 import { useTeam } from '../hooks/useTeam'
@@ -12,11 +13,34 @@ import { useTeam } from '../hooks/useTeam'
 const SUBAGENT_PILL = 'Subagents'
 /** 'Agent' is the subagent tool in current Claude Code; 'Task' covers older CLIs. */
 const SUBAGENT_TOOL_NAMES = ['Agent', 'Task']
-const TOOL_CHOICES = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebSearch', 'WebFetch', SUBAGENT_PILL]
+/** Off by default: it spawns an npx server and needs Studio actually open. */
+const STUDIO_PILL = 'Roblox Studio'
+const TOOL_CHOICES = [
+  'Read',
+  'Glob',
+  'Grep',
+  'Edit',
+  'Write',
+  'Bash',
+  'WebSearch',
+  'WebFetch',
+  SUBAGENT_PILL,
+  STUDIO_PILL
+]
 const DEFAULT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', SUBAGENT_PILL]
 
+const TOOL_HINTS: Record<string, string> = {
+  [SUBAGENT_PILL]: 'Allow the agent to spawn subagents (Agent/Task tool)',
+  [STUDIO_PILL]:
+    'Studio-side work via the Roblox Studio MCP — instances, meshes, asset uploads, screenshots. Requires Roblox Studio to be running.'
+}
+
 function expandTools(tools: string[]): string[] {
-  return tools.flatMap((tool) => (tool === SUBAGENT_PILL ? SUBAGENT_TOOL_NAMES : [tool]))
+  return tools.flatMap((tool) => {
+    if (tool === SUBAGENT_PILL) return SUBAGENT_TOOL_NAMES
+    if (tool === STUDIO_PILL) return [ROBLOX_MCP_TOOL_GLOB]
+    return [tool]
+  })
 }
 
 const MODEL_OPTIONS: { value: string; label: string }[] = [
@@ -305,7 +329,7 @@ function LaunchForm({
                   onClick={() =>
                     setTools((prev) => (on ? prev.filter((t) => t !== tool) : [...prev, tool]))
                   }
-                  title={tool === SUBAGENT_PILL ? 'Allow the agent to spawn subagents (Agent/Task tool)' : undefined}
+                  title={TOOL_HINTS[tool]}
                   className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                     on
                       ? 'border-emerald-600 bg-emerald-600/15 text-emerald-300'

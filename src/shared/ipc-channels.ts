@@ -37,11 +37,13 @@ export const IPC = {
   GitWorktreeRemove: 'bridge:git:worktree-remove',
   GitCreatePr: 'bridge:git:create-pr',
   GitMoveToOrg: 'bridge:git:move-to-org',
+  UpdateGet: 'bridge:update:get',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',
   EvUsageChanged: 'bridge:event:usage-changed',
   EvSettingsChanged: 'bridge:event:settings-changed',
   EvTeamChanged: 'bridge:event:team-changed',
-  EvTeamNote: 'bridge:event:team-note'
+  EvTeamNote: 'bridge:event:team-note',
+  EvUpdateChanged: 'bridge:event:update-changed'
 } as const

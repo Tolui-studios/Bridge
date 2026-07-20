@@ -5,7 +5,14 @@ directories:
 asarUnpack:
   # The Agent SDK spawns a node subprocess pointed at files inside its own
   # package dir; a child process cannot read from inside app.asar.
-  - node_modules/@anthropic-ai/claude-agent-sdk/**
+  #
+  # The trailing `*` is load-bearing: the `claude` executable ships in a
+  # SEPARATE per-platform package (claude-agent-sdk-win32-x64,
+  # -darwin-arm64, ...) resolved at install time. Unpacking only the main
+  # package leaves that binary inside the asar, where it cannot be spawned —
+  # the SDK then reports a misleading "binary does not match this system's
+  # libc" error on every platform, Windows included.
+  - node_modules/@anthropic-ai/claude-agent-sdk*/**
 files:
   - '!**/.vscode/*'
   - '!.claude/*'
@@ -16,6 +23,15 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
   - '!{.gitattributes,CLAUDE.md,GOALS.md,README.md}'
+# Generates `latest.yml` (the update manifest electron-updater reads) next to
+# the installer, and uploads both when built with `--publish`. Without this
+# block electron-builder emits the .exe only, and no updater can see it.
+publish:
+  provider: github
+  owner: Tolui-studios
+  repo: Bridge
+  private: true
+  releaseType: release
 win:
   executableName: Bridge
   target:

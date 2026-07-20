@@ -12,6 +12,7 @@ import type {
   GoalsState,
   TeamConnectInput,
   TeamNoteState,
+  UpdateState,
   TeamState,
   UsageSnapshot
 } from '../shared/types'
@@ -72,13 +73,15 @@ const api: BridgeApi = {
     ipcRenderer.invoke(IPC.GitWorktreeRemove, gameId, worktreePath, force),
   createPr: (gameId: string, branch: string) => ipcRenderer.invoke(IPC.GitCreatePr, gameId, branch),
   moveToOrg: (gameId: string) => ipcRenderer.invoke(IPC.GitMoveToOrg, gameId),
+  getUpdateState: () => ipcRenderer.invoke(IPC.UpdateGet),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
   onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent),
   onUsageChanged: subscribe<UsageSnapshot>(IPC.EvUsageChanged),
   onSettingsChanged: subscribe<AppSettings>(IPC.EvSettingsChanged),
   onTeamChanged: subscribe<TeamState>(IPC.EvTeamChanged),
-  onTeamNote: subscribe<{ gameId: string; note: TeamNoteState }>(IPC.EvTeamNote)
+  onTeamNote: subscribe<{ gameId: string; note: TeamNoteState }>(IPC.EvTeamNote),
+  onUpdateChanged: subscribe<UpdateState>(IPC.EvUpdateChanged)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)

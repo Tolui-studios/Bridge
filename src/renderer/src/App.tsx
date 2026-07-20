@@ -4,6 +4,7 @@ import { useGames } from './hooks/useGames'
 import Sidebar from './components/Sidebar'
 import GamePanel from './components/GamePanel'
 import AddGameModal from './components/AddGameModal'
+import UpdateBanner from './components/UpdateBanner'
 
 type ModalState = { mode: 'add' } | { mode: 'edit'; game: Game } | null
 
@@ -36,7 +37,9 @@ export default function App() {
   }, [selected?.id])
 
   return (
-    <div className="flex h-full bg-neutral-950 text-neutral-200">
+    <div className="flex h-full flex-col bg-neutral-950 text-neutral-200">
+      <UpdateBanner />
+      <div className="flex min-h-0 flex-1">
       <Sidebar
         games={games}
         selectedId={selected?.id ?? null}
@@ -70,6 +73,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>
       {modal && (
         <AddGameModal
           initial={modal.mode === 'edit' ? modal.game : null}

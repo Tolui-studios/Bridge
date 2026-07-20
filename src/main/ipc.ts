@@ -35,6 +35,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { scaffoldRobloxGame } from './robloxScaffold'
 import { gameTooling } from './tooling'
+import type { UpdaterService } from './updater'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -45,7 +46,8 @@ export function registerIpc(
   vault: VaultService,
   team: TeamSync,
   worktrees: WorktreeService,
-  toolchain: ToolchainService
+  toolchain: ToolchainService,
+  updater: UpdaterService
 ): void {
   const requireGame = (gameId: string): Game => {
     const game = registry.get(gameId)
@@ -59,6 +61,8 @@ export function registerIpc(
       win.webContents.send(IPC.EvRegistryChanged, games)
     }
   }
+
+  ipcMain.handle(IPC.UpdateGet, () => updater.get())
 
   ipcMain.handle(IPC.GamesList, () => registry.list())
 

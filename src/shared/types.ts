@@ -276,6 +276,16 @@ export interface UsageSnapshot {
   stale: boolean
 }
 
+/**
+ * Auto-update progress for this launch. `ready` means the download finished
+ * and the new version applies the next time Bridge quits.
+ */
+export interface UpdateState {
+  status: 'idle' | 'disabled' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  version: string | null
+  reason: string | null
+}
+
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
@@ -326,4 +336,6 @@ export interface BridgeApi {
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void
   onTeamChanged(cb: (state: TeamState) => void): () => void
   onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
+  getUpdateState(): Promise<UpdateState>
+  onUpdateChanged(cb: (state: UpdateState) => void): () => void
 }
