@@ -336,7 +336,8 @@ export interface BridgeApi {
   gitPull(gameId: string): Promise<string>
   listWorktrees(gameId: string): Promise<WorktreeRow[]>
   removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>
-  createPr(gameId: string, branch: string): Promise<string>
+  /** Commits pending changes in `worktreePath` (if any), pushes, opens the PR. */
+  createPr(gameId: string, branch: string, worktreePath?: string): Promise<string>
   onGoalsChanged(cb: (state: GoalsState) => void): () => void
   onRegistryChanged(cb: (games: Game[]) => void): () => void
   onAgentEvent(cb: (event: AgentEvent) => void): () => void
@@ -344,8 +345,8 @@ export interface BridgeApi {
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void
   onTeamChanged(cb: (state: TeamState) => void): () => void
   onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
-  /** Open a worktree folder in VS Code. */
-  openWorktreeInEditor(gameId: string, worktreePath: string): Promise<void>
+  /** Open a folder in VS Code — the repo itself, or one of its worktrees. */
+  openInEditor(gameId: string, targetPath?: string): Promise<void>
   getUpdateState(): Promise<UpdateState>
   /** Install the downloaded update now and relaunch. */
   installUpdate(): Promise<void>

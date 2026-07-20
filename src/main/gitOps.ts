@@ -321,29 +321,56 @@ export async function pull(game: Game): Promise<string> {
   }
 }
 
-/** Push a branch and return the GitHub compare URL for opening a PR. */
-export async function pushBranchForPr(game: Game, branch: string): Promise<string> {
+/**
+ * Push a branch and return the GitHub compare URL for opening a PR.
+ *
+ * The common reason a PR "doesn't work" is that the agent edited files but
+ * never committed, leaving the branch identical to its base — GitHub then has
+ * nothing to compare. When a worktree is given, its pending changes are
+ * committed onto its own branch first so the button does the obvious thing
+ * instead of refusing.
+ */
+export async function pushBranchForPr(
+  game: Game,
+  branch: string,
+  worktreePath?: string
+): Promise<string> {
   const remote = await remoteUrl(game.repoPath)
   const webUrl = toWebUrl(remote)
   if (!webUrl) throw new Error('This repo has no recognizable origin remote.')
-  // GitHub has nothing to show for a branch identical to its base, so the
-  // compare page comes up empty and the PR can't be opened. Say why here
-  // rather than pushing a pointless branch and handing over a dead link.
+
+  if (worktreePath) {
+    try {
+      const { stdout } = await git(worktreePath, ['status', '--porcelain'])
+      if (stdout.trim() !== '') {
+        await commitAll(worktreePath, `chore: ${branch} work in progress`)
+      }
+    } catch (err) {
+      const anyErr = err as { stderr?: string; message?: string }
+      throw new Error(
+        `Could not commit the pending changes in this worktree: ${(anyErr.stderr || anyErr.message || 'git failed').trim().slice(0, 300)}`
+      )
+    }
+  }
+
+  let ahead = '0'
   try {
     const { stdout } = await git(game.repoPath, [
       'rev-list',
       '--count',
       `${game.defaultBranch}..${branch}`
     ])
-    if (stdout.trim() === '0') {
-      throw new Error(
-        `${branch} has no commits that aren't already on ${game.defaultBranch}, so there is nothing to open a pull request for. The agent likely never committed its work — open the worktree and commit first.`
-      )
-    }
-  } catch (err) {
-    // Only swallow the rev-list failing (e.g. unknown branch); surface ours.
-    if (err instanceof Error && err.message.includes('nothing to open a pull request')) throw err
+    ahead = stdout.trim()
+  } catch {
+    // Unknown branch or missing base — let the push surface the real error.
+    ahead = '1'
   }
+  if (ahead === '0') {
+    throw new Error(
+      `${branch} is identical to ${game.defaultBranch} and has no pending changes, so there is nothing to open a pull request for.`
+    )
+  }
+
   try {
     await git(game.repoPath, ['push', '-u', 'origin', `${branch}:${branch}`])
   } catch (err) {

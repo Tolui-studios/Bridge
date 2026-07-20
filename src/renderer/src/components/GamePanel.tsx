@@ -54,6 +54,11 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
     window.bridge.openRepo(game.id).catch((err) => setActionError(cleanIpcError(err)))
   }
 
+  const openInVsCode = (): void => {
+    setActionError(null)
+    window.bridge.openInEditor(game.id).catch((err) => setActionError(cleanIpcError(err)))
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <header className="mb-6 flex items-start justify-between gap-4">
@@ -70,6 +75,13 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
             className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-800"
           >
             Open Folder
+          </button>
+          <button
+            onClick={openInVsCode}
+            title="Open the repo folder in VS Code"
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-800"
+          >
+            VS Code
           </button>
           <button
             onClick={onEdit}

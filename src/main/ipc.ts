@@ -106,12 +106,14 @@ export function registerIpc(
 
   ipcMain.handle(
     IPC.GitWorktreeOpenEditor,
-    async (_event, gameId: string, worktreePath: string) => {
+    async (_event, gameId: string, targetPath?: string) => {
       const game = requireGame(gameId)
-      if (!isUnder(worktreePath, game.worktreeRoot)) {
-        throw new Error('That path is not one of this game’s worktrees.')
+      // No target = the repo itself; otherwise it must be one of its worktrees.
+      const dir = targetPath ?? game.repoPath
+      if (dir !== game.repoPath && !isUnder(dir, game.worktreeRoot)) {
+        throw new Error('That path is neither this game’s repo nor one of its worktrees.')
       }
-      await openInVsCode(worktreePath)
+      await openInVsCode(dir)
     }
   )
 
@@ -322,11 +324,18 @@ export function registerIpc(
     (_event, gameId: string, worktreePath: string, force: boolean) =>
       worktrees.remove(requireGame(gameId), worktreePath, force)
   )
-  ipcMain.handle(IPC.GitCreatePr, async (_event, gameId: string, branch: string) => {
-    const url = await pushBranchForPr(requireGame(gameId), branch)
-    void shell.openExternal(url)
-    return url
-  })
+  ipcMain.handle(
+    IPC.GitCreatePr,
+    async (_event, gameId: string, branch: string, worktreePath?: string) => {
+      const game = requireGame(gameId)
+      if (worktreePath && !isUnder(worktreePath, game.worktreeRoot)) {
+        throw new Error('That path is not one of this game’s worktrees.')
+      }
+      const url = await pushBranchForPr(game, branch, worktreePath)
+      void shell.openExternal(url)
+      return url
+    }
+  )
 
   ipcMain.handle(IPC.GitMoveToOrg, async (_event, gameId: string) => {
     const game = requireGame(gameId)

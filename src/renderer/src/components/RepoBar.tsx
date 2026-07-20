@@ -139,7 +139,7 @@ export default function RepoBar({ game }: { game: Game }) {
                 <button
                   onClick={() =>
                     act(`code-${worktree.path}`, () =>
-                      window.bridge.openWorktreeInEditor(game.id, worktree.path)
+                      window.bridge.openInEditor(game.id, worktree.path)
                     )
                   }
                   disabled={busy !== null}
@@ -151,14 +151,18 @@ export default function RepoBar({ game }: { game: Game }) {
                 {worktree.branch && status.webUrl && (
                   <button
                     onClick={() =>
-                      act(`pr-${worktree.path}`, () => window.bridge.createPr(game.id, worktree.branch!))
+                      act(`pr-${worktree.path}`, async () => {
+                        const url = await window.bridge.createPr(
+                          game.id,
+                          worktree.branch!,
+                          worktree.path
+                        )
+                        refresh()
+                        return url
+                      })
                     }
-                    disabled={busy !== null || worktree.ahead === 0}
-                    title={
-                      worktree.ahead === 0
-                        ? 'Nothing to PR — this branch is identical to the base branch. The agent has not committed any work.'
-                        : 'Push this branch and open a GitHub PR'
-                    }
+                    disabled={busy !== null}
+                    title="Commit any pending changes in this worktree, push the branch, and open a GitHub PR"
                     className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40"
                   >
                     {busy === `pr-${worktree.path}` ? 'Pushing…' : 'Create PR'}
