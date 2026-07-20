@@ -83,6 +83,33 @@ describe('WorktreeService', () => {
     expect(reused.created).toBe(false)
   })
 
+  it('does not hand a released worktree with uncommitted changes to the next agent', async () => {
+    const service = new WorktreeService()
+    const game = makeGame({ id: 'dirty', worktreeRoot: path.join(root, 'dirty-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    fs.writeFileSync(path.join(first.path, 'work-in-progress.luau'), '-- unsaved work\n')
+    service.release('session-a')
+
+    const next = await service.acquire(game, 'session-b')
+    expect(next.path).not.toBe(first.path)
+    // The previous agent's work is still sitting where it was left.
+    expect(fs.existsSync(path.join(first.path, 'work-in-progress.luau'))).toBe(true)
+  })
+
+  it('does not reuse a released worktree that has unmerged commits', async () => {
+    const service = new WorktreeService()
+    const game = makeGame({ id: 'ahead', worktreeRoot: path.join(root, 'ahead-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    fs.writeFileSync(path.join(first.path, 'feature.luau'), '-- done\n')
+    execFileSync('git', ['-C', first.path, 'add', '-A'], { stdio: 'pipe' })
+    execFileSync('git', ['-C', first.path, 'commit', '-m', 'agent work'], { stdio: 'pipe' })
+    service.release('session-a')
+
+    const next = await service.acquire(game, 'session-b')
+    expect(next.path).not.toBe(first.path)
+    expect(fs.existsSync(path.join(first.path, 'feature.luau'))).toBe(true)
+  })
+
   it('keeps worktrees outside the repo directory itself', async () => {
     const service = new WorktreeService()
     const lease = await service.acquire(makeGame(), 'session-d')

@@ -73,6 +73,8 @@ const api: BridgeApi = {
     ipcRenderer.invoke(IPC.GitWorktreeRemove, gameId, worktreePath, force),
   createPr: (gameId: string, branch: string) => ipcRenderer.invoke(IPC.GitCreatePr, gameId, branch),
   moveToOrg: (gameId: string) => ipcRenderer.invoke(IPC.GitMoveToOrg, gameId),
+  openWorktreeInEditor: (gameId: string, worktreePath: string) =>
+    ipcRenderer.invoke(IPC.GitWorktreeOpenEditor, gameId, worktreePath),
   getUpdateState: () => ipcRenderer.invoke(IPC.UpdateGet),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),

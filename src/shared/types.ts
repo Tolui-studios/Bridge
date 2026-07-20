@@ -339,6 +339,8 @@ export interface BridgeApi {
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void
   onTeamChanged(cb: (state: TeamState) => void): () => void
   onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
+  /** Open a worktree folder in VS Code. */
+  openWorktreeInEditor(gameId: string, worktreePath: string): Promise<void>
   getUpdateState(): Promise<UpdateState>
   onUpdateChanged(cb: (state: UpdateState) => void): () => void
 }

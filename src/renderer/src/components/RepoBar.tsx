@@ -126,6 +126,18 @@ export default function RepoBar({ game }: { game: Game }) {
                 </span>
               )}
               <span className="ml-auto flex shrink-0 gap-1.5">
+                <button
+                  onClick={() =>
+                    act(`code-${worktree.path}`, () =>
+                      window.bridge.openWorktreeInEditor(game.id, worktree.path)
+                    )
+                  }
+                  disabled={busy !== null}
+                  title={`Open ${worktree.path} in VS Code`}
+                  className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40"
+                >
+                  {busy === `code-${worktree.path}` ? 'Opening…' : 'VS Code'}
+                </button>
                 {worktree.branch && status.webUrl && (
                   <button
                     onClick={() =>

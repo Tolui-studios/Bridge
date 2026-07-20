@@ -15,6 +15,7 @@ import type { SettingsStore } from './settings'
 import type { VaultService } from './vault'
 import type { TeamSync } from './teamSync'
 import type { WorktreeService } from './worktrees'
+import { isUnder } from './worktrees'
 import type { ToolchainService } from './toolchain'
 import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
 import {
@@ -36,6 +37,41 @@ import fs from 'node:fs'
 import { scaffoldRobloxGame } from './robloxScaffold'
 import { gameTooling } from './tooling'
 import type { UpdaterService } from './updater'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Open a folder in VS Code. `code` is a `.cmd` shim on Windows (so it needs a
+ * shell), and on macOS it only exists once the user has run "Shell Command:
+ * Install 'code' command in PATH" — hence the `open -a` fallback there.
+ */
+async function openInVsCode(dir: string): Promise<void> {
+  const attempts: [string, string[]][] =
+    process.platform === 'win32'
+      ? [['cmd', ['/c', 'code', dir]]]
+      : process.platform === 'darwin'
+        ? [
+            ['code', [dir]],
+            ['open', ['-a', 'Visual Studio Code', dir]]
+          ]
+        : [['code', [dir]]]
+
+  let lastError: unknown = null
+  for (const [command, args] of attempts) {
+    try {
+      await execFileAsync(command, args, { windowsHide: true })
+      return
+    } catch (err) {
+      lastError = err
+    }
+  }
+  const detail = lastError instanceof Error ? ` (${lastError.message.trim().slice(0, 120)})` : ''
+  throw new Error(
+    `Could not launch VS Code. Install it, then run "Shell Command: Install 'code' command in PATH" from its Command Palette so \`code\` is available.${detail}`
+  )
+}
 
 export function registerIpc(
   registry: GameRegistry,
@@ -61,6 +97,17 @@ export function registerIpc(
       win.webContents.send(IPC.EvRegistryChanged, games)
     }
   }
+
+  ipcMain.handle(
+    IPC.GitWorktreeOpenEditor,
+    async (_event, gameId: string, worktreePath: string) => {
+      const game = requireGame(gameId)
+      if (!isUnder(worktreePath, game.worktreeRoot)) {
+        throw new Error('That path is not one of this game’s worktrees.')
+      }
+      await openInVsCode(worktreePath)
+    }
+  )
 
   ipcMain.handle(IPC.UpdateGet, () => updater.get())
 

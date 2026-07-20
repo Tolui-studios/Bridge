@@ -35,6 +35,7 @@ export const IPC = {
   GitPull: 'bridge:git:pull',
   GitWorktrees: 'bridge:git:worktrees',
   GitWorktreeRemove: 'bridge:git:worktree-remove',
+  GitWorktreeOpenEditor: 'bridge:git:worktree-open-editor',
   GitCreatePr: 'bridge:git:create-pr',
   GitMoveToOrg: 'bridge:git:move-to-org',
   UpdateGet: 'bridge:update:get',

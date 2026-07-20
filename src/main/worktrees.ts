@@ -51,10 +51,27 @@ export class WorktreeService {
     await this.git(game.repoPath, ['worktree', 'prune'])
     const existing = await this.list(game.repoPath)
     const underRoot = existing.filter((w) => isUnder(w.path, game.worktreeRoot))
-    const free = underRoot.find(
-      (w) => !this.inUse.has(normalize(w.path)) && fs.existsSync(w.path)
-    )
+
+    // Only a PRISTINE worktree may be reused. A worktree that still holds the
+    // previous agent's uncommitted changes or unmerged commits is left alone
+    // and a fresh slot is allocated instead — otherwise the next agent starts
+    // on top of work it never did, and that work is at risk of being lost.
+    let free: WorktreeInfo | null = null
+    for (const candidate of underRoot) {
+      if (this.inUse.has(normalize(candidate.path))) continue
+      if (!fs.existsSync(candidate.path)) continue
+      if (!(await this.isPristine(candidate.path, game.defaultBranch))) continue
+      free = candidate
+      break
+    }
     if (free) {
+      // Safe: pristine means nothing to lose, and it stops the agent from
+      // starting on a base branch that has moved on since this was created.
+      try {
+        await this.git(free.path, ['reset', '--hard', game.defaultBranch])
+      } catch {
+        // Non-fatal: worst case the agent starts from a slightly older base.
+      }
       this.inUse.set(normalize(free.path), sessionId)
       this.propagateLocalClaudeMd(game.repoPath, free.path)
       return { path: free.path, branch: free.branch, created: false, note: null }
@@ -80,7 +97,30 @@ export class WorktreeService {
       this.propagateLocalClaudeMd(game.repoPath, dir)
       return { path: dir, branch, created: true, note: null }
     }
-    throw new Error(`Could not allocate a worktree after ${MAX_SLOTS} attempts.`)
+    throw new Error(
+      `All ${MAX_SLOTS} worktree slots are taken and none are reusable — every one still holds uncommitted changes or unmerged commits. Open the Worktrees list and remove the finished ones (or merge their branches) to free a slot.`
+    )
+  }
+
+  /**
+   * True only when this worktree carries no work of its own: a clean tree
+   * (ignored files like `Packages/` don't count) and no commits ahead of the
+   * base branch. Anything unknown counts as NOT pristine, so an unreadable
+   * worktree is never handed to a new agent.
+   */
+  private async isPristine(worktreePath: string, defaultBranch: string): Promise<boolean> {
+    try {
+      const { stdout: dirty } = await this.git(worktreePath, ['status', '--porcelain'])
+      if (dirty.trim() !== '') return false
+      const { stdout: ahead } = await this.git(worktreePath, [
+        'rev-list',
+        '--count',
+        `${defaultBranch}..HEAD`
+      ])
+      return ahead.trim() === '0'
+    } catch {
+      return false
+    }
   }
 
   release(sessionId: string): void {
@@ -161,7 +201,8 @@ function normalize(p: string): string {
   return path.resolve(p).toLowerCase()
 }
 
-function isUnder(child: string, parent: string): boolean {
+/** Is `child` inside `parent`? Used to keep path-taking IPC calls in bounds. */
+export function isUnder(child: string, parent: string): boolean {
   const rel = path.relative(path.resolve(parent), path.resolve(child))
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
 }
