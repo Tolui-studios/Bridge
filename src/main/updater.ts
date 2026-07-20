@@ -16,6 +16,12 @@ const { autoUpdater } = electronUpdater
  * `latest.yml` leaves Bridge running normally with a reason on the state.
  */
 export class UpdaterService {
+  /**
+   * @param liveAgents Count of running agent sessions — an in-place restart
+   * would kill them, so it is refused while any are alive.
+   */
+  constructor(private readonly liveAgents: () => number = () => 0) {}
+
   private state: UpdateState = {
     status: 'idle',
     currentVersion: app.getVersion(),
@@ -65,6 +71,26 @@ export class UpdaterService {
     autoUpdater.checkForUpdates().catch((err: unknown) => {
       this.set({ status: 'error', reason: err instanceof Error ? err.message : String(err) })
     })
+  }
+
+  /**
+   * Apply the downloaded update now and relaunch. Quitting normally already
+   * installs it, but the installer takes a few seconds after the process
+   * exits — reopening inside that window can still start the old build. This
+   * makes "closed it, reopened it, it's updated" deterministic.
+   */
+  install(): void {
+    if (this.state.status !== 'ready') {
+      throw new Error('No update has finished downloading yet.')
+    }
+    const live = this.liveAgents()
+    if (live > 0) {
+      throw new Error(
+        `${live} agent session${live > 1 ? 's are' : ' is'} still running and restarting would end ${live > 1 ? 'them' : 'it'}. Stop ${live > 1 ? 'them' : 'it'} first, or just close Bridge normally — the update applies on quit either way.`
+      )
+    }
+    // Let the IPC reply reach the renderer before the app starts tearing down.
+    setImmediate(() => autoUpdater.quitAndInstall(true, true))
   }
 
   private set(patch: Partial<UpdateState>): void {

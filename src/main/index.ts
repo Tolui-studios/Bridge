@@ -100,7 +100,7 @@ if (!gotLock) {
       }
     })
     agentsRef = agents
-    const updater = new UpdaterService()
+    const updater = new UpdaterService(() => agentsRef?.liveCount() ?? 0)
     registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain, updater)
     goals.syncWatchers(registry.list())
     usage.start()

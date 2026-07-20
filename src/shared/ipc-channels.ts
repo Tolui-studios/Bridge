@@ -39,6 +39,7 @@ export const IPC = {
   GitCreatePr: 'bridge:git:create-pr',
   GitMoveToOrg: 'bridge:git:move-to-org',
   UpdateGet: 'bridge:update:get',
+  UpdateInstall: 'bridge:update:install',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',

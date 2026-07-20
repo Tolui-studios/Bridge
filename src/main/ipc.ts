@@ -116,6 +116,7 @@ export function registerIpc(
   )
 
   ipcMain.handle(IPC.UpdateGet, () => updater.get())
+  ipcMain.handle(IPC.UpdateInstall, () => updater.install())
 
   ipcMain.handle(IPC.GamesList, () => registry.list())
 

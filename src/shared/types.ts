@@ -347,5 +347,7 @@ export interface BridgeApi {
   /** Open a worktree folder in VS Code. */
   openWorktreeInEditor(gameId: string, worktreePath: string): Promise<void>
   getUpdateState(): Promise<UpdateState>
+  /** Install the downloaded update now and relaunch. */
+  installUpdate(): Promise<void>
   onUpdateChanged(cb: (state: UpdateState) => void): () => void
 }

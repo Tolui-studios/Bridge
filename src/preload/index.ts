@@ -76,6 +76,7 @@ const api: BridgeApi = {
   openWorktreeInEditor: (gameId: string, worktreePath: string) =>
     ipcRenderer.invoke(IPC.GitWorktreeOpenEditor, gameId, worktreePath),
   getUpdateState: () => ipcRenderer.invoke(IPC.UpdateGet),
+  installUpdate: () => ipcRenderer.invoke(IPC.UpdateInstall),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
   onRegistryChanged: subscribe<Game[]>(IPC.EvRegistryChanged),
   onAgentEvent: subscribe<AgentEvent>(IPC.EvAgentEvent),
