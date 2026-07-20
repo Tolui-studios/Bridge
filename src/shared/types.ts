@@ -244,6 +244,11 @@ export interface WorktreeRow {
   name: string
   branch: string | null
   inUse: boolean
+  /**
+   * Commits on this branch that aren't on the default branch. Zero means
+   * there is nothing to open a pull request for.
+   */
+  ahead: number
 }
 
 export interface VaultNoteRef {

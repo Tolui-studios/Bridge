@@ -5,9 +5,9 @@
  * relying on a per-machine `claude mcp add`, so a fresh dev machine needs no
  * setup step beyond having Studio open.
  *
- * The server is opt-in per launch: it spawns an npx process and is useless
- * unless Roblox Studio is actually running, so it is not in the default
- * toolset.
+ * On by default in the launch form: Studio work is the norm for these games.
+ * It can still be switched off per launch — the server is only spawned when
+ * the tool whitelist asks for it, so an opted-out run costs nothing.
  */
 export const ROBLOX_MCP_SERVER = 'robloxstudio'
 

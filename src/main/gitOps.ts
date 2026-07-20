@@ -326,6 +326,24 @@ export async function pushBranchForPr(game: Game, branch: string): Promise<strin
   const remote = await remoteUrl(game.repoPath)
   const webUrl = toWebUrl(remote)
   if (!webUrl) throw new Error('This repo has no recognizable origin remote.')
+  // GitHub has nothing to show for a branch identical to its base, so the
+  // compare page comes up empty and the PR can't be opened. Say why here
+  // rather than pushing a pointless branch and handing over a dead link.
+  try {
+    const { stdout } = await git(game.repoPath, [
+      'rev-list',
+      '--count',
+      `${game.defaultBranch}..${branch}`
+    ])
+    if (stdout.trim() === '0') {
+      throw new Error(
+        `${branch} has no commits that aren't already on ${game.defaultBranch}, so there is nothing to open a pull request for. The agent likely never committed its work — open the worktree and commit first.`
+      )
+    }
+  } catch (err) {
+    // Only swallow the rev-list failing (e.g. unknown branch); surface ours.
+    if (err instanceof Error && err.message.includes('nothing to open a pull request')) throw err
+  }
   try {
     await git(game.repoPath, ['push', '-u', 'origin', `${branch}:${branch}`])
   } catch (err) {

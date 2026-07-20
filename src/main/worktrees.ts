@@ -112,12 +112,7 @@ export class WorktreeService {
     try {
       const { stdout: dirty } = await this.git(worktreePath, ['status', '--porcelain'])
       if (dirty.trim() !== '') return false
-      const { stdout: ahead } = await this.git(worktreePath, [
-        'rev-list',
-        '--count',
-        `${defaultBranch}..HEAD`
-      ])
-      return ahead.trim() === '0'
+      return (await this.aheadOfBase(worktreePath, defaultBranch)) === 0
     } catch {
       return false
     }
@@ -134,14 +129,30 @@ export class WorktreeService {
     if (!fs.existsSync(path.join(game.repoPath, '.git'))) return []
     await this.git(game.repoPath, ['worktree', 'prune'])
     const existing = await this.list(game.repoPath)
-    return existing
-      .filter((w) => isUnder(w.path, game.worktreeRoot) && fs.existsSync(w.path))
-      .map((w) => ({
+    const mine = existing.filter((w) => isUnder(w.path, game.worktreeRoot) && fs.existsSync(w.path))
+    return Promise.all(
+      mine.map(async (w) => ({
         path: w.path,
         name: path.basename(w.path),
         branch: w.branch,
-        inUse: this.inUse.has(normalize(w.path))
+        inUse: this.inUse.has(normalize(w.path)),
+        ahead: await this.aheadOfBase(w.path, game.defaultBranch)
       }))
+    )
+  }
+
+  /** Commits on this worktree's branch that aren't on the base branch. */
+  private async aheadOfBase(worktreePath: string, defaultBranch: string): Promise<number> {
+    try {
+      const { stdout } = await this.git(worktreePath, [
+        'rev-list',
+        '--count',
+        `${defaultBranch}..HEAD`
+      ])
+      return Number.parseInt(stdout.trim(), 10) || 0
+    } catch {
+      return 0
+    }
   }
 
   /** Remove a worktree (refuses while a live session holds it). */

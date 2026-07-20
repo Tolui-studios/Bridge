@@ -7,7 +7,7 @@ The canonical description of how every studio game is built. `Create new game` i
 | Tool | Pin | What it is |
 |---|---|---|
 | Rokit | — | toolchain manager |
-| Rojo | 7.6.1 | file ↔ Roblox sync/build |
+| Rojo | 7.7.0 | file ↔ Roblox sync/build |
 | Lune | 0.10.4 | Luau task runtime |
 | Wally | 0.3.2 | package manager |
 | wally-package-types | 1.6.2 | LSP types for packages |
@@ -42,9 +42,7 @@ src/
   shared/            -> ReplicatedStorage.Shared
     Config/  Data/  Enums/  Types/  Utils/
     Remotes/            (ByteNet namespaces)
-  replicated-first/  -> ReplicatedFirst
   stories/           -> ServerStorage.Stories (UI-Labs)
-  lighting/          -> Lighting
 Packages/            -> ReplicatedStorage.Packages (Wally output, gitignored)
 ```
 

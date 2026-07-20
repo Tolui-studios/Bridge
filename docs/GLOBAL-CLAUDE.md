@@ -59,9 +59,7 @@ When your session has the `mcp__robloxstudio__*` tools, you can create real, **p
 | `src/client/` (Controllers, Managers, Signals, UI) | `StarterPlayer.StarterPlayerScripts.Client` |
 | `src/server/` (Services, Managers, Commands, SETTINGS) | `ServerScriptService.Server` |
 | `src/shared/` (Config, Data, Enums, Types, Utils, Remotes) | `ReplicatedStorage.Shared` |
-| `src/replicated-first/` | `ReplicatedFirst` |
 | `src/stories/` | `ServerStorage.Stories` |
-| `src/lighting/` | `Lighting` |
 | `Packages/` (gitignored, Wally output) | `ReplicatedStorage.Packages` |
 
 ## Verification

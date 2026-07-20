@@ -46,17 +46,23 @@ const execFileAsync = promisify(execFile)
  * Open a folder in VS Code. `code` is a `.cmd` shim on Windows (so it needs a
  * shell), and on macOS it only exists once the user has run "Shell Command:
  * Install 'code' command in PATH" — hence the `open -a` fallback there.
+ *
+ * `--disable-workspace-trust` skips the trust prompt, which would otherwise
+ * appear for every freshly created `agent-<n>` directory. It affects only the
+ * launched session, never the user's global trust settings — and a worktree is
+ * a checkout of a repo they already own.
  */
 async function openInVsCode(dir: string): Promise<void> {
+  const flag = '--disable-workspace-trust'
   const attempts: [string, string[]][] =
     process.platform === 'win32'
-      ? [['cmd', ['/c', 'code', dir]]]
+      ? [['cmd', ['/c', 'code', flag, dir]]]
       : process.platform === 'darwin'
         ? [
-            ['code', [dir]],
-            ['open', ['-a', 'Visual Studio Code', dir]]
+            ['code', [flag, dir]],
+            ['open', ['-a', 'Visual Studio Code', '--args', flag, dir]]
           ]
-        : [['code', [dir]]]
+        : [['code', [flag, dir]]]
 
   let lastError: unknown = null
   for (const [command, args] of attempts) {

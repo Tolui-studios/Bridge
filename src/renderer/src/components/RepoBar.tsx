@@ -125,6 +125,16 @@ export default function RepoBar({ game }: { game: Game }) {
                   {worktree.branch}
                 </span>
               )}
+              <span
+                className={`shrink-0 text-[10px] ${worktree.ahead > 0 ? 'text-emerald-500' : 'text-neutral-700'}`}
+                title={
+                  worktree.ahead > 0
+                    ? `${worktree.ahead} commit${worktree.ahead > 1 ? 's' : ''} not on ${status.branch ?? 'the base branch'}`
+                    : 'Identical to the base branch — nothing to PR'
+                }
+              >
+                {worktree.ahead > 0 ? `+${worktree.ahead}` : '—'}
+              </span>
               <span className="ml-auto flex shrink-0 gap-1.5">
                 <button
                   onClick={() =>
@@ -143,8 +153,12 @@ export default function RepoBar({ game }: { game: Game }) {
                     onClick={() =>
                       act(`pr-${worktree.path}`, () => window.bridge.createPr(game.id, worktree.branch!))
                     }
-                    disabled={busy !== null}
-                    title="Push this branch and open a GitHub PR"
+                    disabled={busy !== null || worktree.ahead === 0}
+                    title={
+                      worktree.ahead === 0
+                        ? 'Nothing to PR — this branch is identical to the base branch. The agent has not committed any work.'
+                        : 'Push this branch and open a GitHub PR'
+                    }
                     className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40"
                   >
                     {busy === `pr-${worktree.path}` ? 'Pushing…' : 'Create PR'}

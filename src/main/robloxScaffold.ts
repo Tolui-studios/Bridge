@@ -3,8 +3,8 @@ import path from 'node:path'
 
 /**
  * Seed a brand-new game with the studio's real Roblox stack: Rokit toolchain
- * pins, Wally packages, the full Rojo tree (client/server/shared +
- * replicated-first/stories/lighting), the hand-rolled Init/Start bootstrap,
+ * pins, Wally packages, the Rojo tree (client/server/shared/stories), the
+ * hand-rolled Init/Start bootstrap,
  * and a per-game CLAUDE.md wired to the studio conventions. Canonical stack
  * reference: docs/ROBLOX-STACK.md. Existing files are never overwritten.
  */
@@ -24,7 +24,7 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
     'rokit.toml',
     [
       '[tools]',
-      'rojo = "rojo-rbx/rojo@7.6.1"',
+      'rojo = "rojo-rbx/rojo@7.7.0"',
       'lune = "lune-org/lune@0.10.4"',
       'wally = "UpliftGames/wally@0.3.2"',
       'wally-package-types = "JohnnyMorganz/wally-package-types@1.6.2"',
@@ -88,12 +88,10 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
         name,
         tree: {
           $className: 'DataModel',
-          Lighting: { $path: 'src/lighting' },
           ReplicatedStorage: {
             Shared: { $path: 'src/shared' },
             Packages: { $path: 'Packages' }
           },
-          ReplicatedFirst: { $path: 'src/replicated-first' },
           ServerScriptService: {
             Server: { $path: 'src/server' }
           },
@@ -148,9 +146,7 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
       '| `src/client/` (Controllers, Managers, Signals, UI) | `StarterPlayer.StarterPlayerScripts.Client` |',
       '| `src/server/` (Services, Managers, Commands, SETTINGS) | `ServerScriptService.Server` |',
       '| `src/shared/` (Config, Data, Enums, Types, Utils, Remotes) | `ReplicatedStorage.Shared` |',
-      '| `src/replicated-first/` | `ReplicatedFirst` |',
       '| `src/stories/` | `ServerStorage.Stories` |',
-      '| `src/lighting/` | `Lighting` |',
       '| `Packages/` (gitignored — wally install output) | `ReplicatedStorage.Packages` |',
       '',
       'Note: `Packages/` may be absent in agent worktrees (gitignored). Trust `wally.toml` for what exists; require packages as `ReplicatedStorage.Packages.<Name>`.',
@@ -325,9 +321,7 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
     'src/shared/Types',
     'src/shared/Utils',
     'src/shared/Remotes',
-    'src/replicated-first',
-    'src/stories',
-    'src/lighting'
+    'src/stories'
   ]
   for (const dirPath of keepDirs) {
     write(path.join(dirPath, '.gitkeep'), '')

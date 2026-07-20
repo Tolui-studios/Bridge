@@ -13,7 +13,6 @@ import { useTeam } from '../hooks/useTeam'
 const SUBAGENT_PILL = 'Subagents'
 /** 'Agent' is the subagent tool in current Claude Code; 'Task' covers older CLIs. */
 const SUBAGENT_TOOL_NAMES = ['Agent', 'Task']
-/** Off by default: it spawns an npx server and needs Studio actually open. */
 const STUDIO_PILL = 'Roblox Studio'
 const TOOL_CHOICES = [
   'Read',
@@ -27,7 +26,7 @@ const TOOL_CHOICES = [
   SUBAGENT_PILL,
   STUDIO_PILL
 ]
-const DEFAULT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', SUBAGENT_PILL]
+const DEFAULT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', SUBAGENT_PILL, STUDIO_PILL]
 
 const TOOL_HINTS: Record<string, string> = {
   [SUBAGENT_PILL]: 'Allow the agent to spawn subagents (Agent/Task tool)',

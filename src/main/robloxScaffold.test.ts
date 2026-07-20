@@ -29,11 +29,11 @@ describe('scaffoldRobloxGame', () => {
     expect(project.tree.ReplicatedStorage.Shared.$path).toBe('src/shared')
     expect(project.tree.ReplicatedStorage.Packages.$path).toBe('Packages')
     expect(project.tree.ServerStorage.Stories.$path).toBe('src/stories')
-    expect(project.tree.Lighting.$path).toBe('src/lighting')
-    expect(project.tree.ReplicatedFirst.$path).toBe('src/replicated-first')
+    expect(project.tree.Lighting).toBeUndefined()
+    expect(project.tree.ReplicatedFirst).toBeUndefined()
 
     const rokit = fs.readFileSync(path.join(dir, 'rokit.toml'), 'utf8')
-    expect(rokit).toContain('rojo-rbx/rojo@7.6.1')
+    expect(rokit).toContain('rojo-rbx/rojo@7.7.0')
     expect(rokit).toContain('Kampfkarren/selene@0.29.0')
 
     const wally = fs.readFileSync(path.join(dir, 'wally.toml'), 'utf8')
@@ -56,11 +56,13 @@ describe('scaffoldRobloxGame', () => {
       'src/client/Controllers/ExampleController.luau',
       'src/client/UI/App.luau',
       'src/shared/Remotes/.gitkeep',
-      'src/stories/.gitkeep',
-      'src/lighting/.gitkeep',
-      'src/replicated-first/.gitkeep'
+      'src/stories/.gitkeep'
     ]) {
       expect(fs.existsSync(path.join(dir, file)), file).toBe(true)
+    }
+
+    for (const gone of ['src/lighting', 'src/replicated-first']) {
+      expect(fs.existsSync(path.join(dir, gone)), gone).toBe(false)
     }
 
     const bootstrap = fs.readFileSync(path.join(dir, 'src/server/init.server.luau'), 'utf8')
