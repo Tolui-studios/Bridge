@@ -66,7 +66,15 @@ export function buildTaskFooter(goals: GoalsPort, gameId: string): string {
     'BRIDGE:TEST <a single concrete step, in the order it should be performed>',
     'Write each step so it can be followed without reading your reply: name the',
     'place/UI to open, the exact action, and the observable result that means it passed.',
-    'Emit these near the end of your final message, after the work is complete.'
+    'Emit these near the end of your final message, after the work is complete.',
+    '',
+    'Questions: when a decision is genuinely the operator\'s — a design choice,',
+    'which of two valid approaches to take, missing information you cannot infer',
+    'from the repo — ask instead of guessing:',
+    'BRIDGE:ASK <your question, phrased so it can be answered in a sentence>',
+    'Then STOP and end your turn; the answer arrives as your next message.',
+    'Do not ask about things you can determine yourself, and do not ask for',
+    'permission to do work already covered by the task.'
   ].join('\n')
   try {
     const state = goals.readStateById(gameId)

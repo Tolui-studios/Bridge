@@ -244,9 +244,23 @@ export default function AgentsSection({ game }: { game: Game }) {
             </span>
           </div>
           <Transcript items={transcript} running={active.status === 'running'} />
+          {active.pendingQuestion && (
+            <div className="mt-3 rounded-md border border-sky-900/70 bg-sky-950/30 px-3 py-2">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-400">
+                The agent is asking
+              </p>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-sky-200">
+                {active.pendingQuestion}
+              </p>
+              <p className="mt-1.5 text-[10px] text-neutral-500">
+                Answer below — your reply becomes its next message.
+              </p>
+            </div>
+          )}
           {activeLive && (
             <FollowUpRow
               running={active.status === 'running'}
+              awaitingAnswer={active.pendingQuestion !== null}
               onSend={(text) => reprompt(active.id, text)}
             />
           )}
@@ -595,13 +609,21 @@ function Transcript({ items, running }: { items: AgentStreamItem[]; running: boo
 
 function FollowUpRow({
   running,
+  awaitingAnswer,
   onSend
 }: {
   running: boolean
+  awaitingAnswer: boolean
   onSend: (text: string) => Promise<boolean>
 }) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const box = useRef<HTMLInputElement>(null)
+
+  // A question is a prompt for input — put the caret where it's needed.
+  useEffect(() => {
+    if (awaitingAnswer) box.current?.focus()
+  }, [awaitingAnswer])
 
   const send = async (): Promise<void> => {
     const trimmed = text.trim()
@@ -618,20 +640,31 @@ function FollowUpRow({
   return (
     <div className="mt-2 flex gap-2">
       <input
+        ref={box}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void send()
         }}
-        placeholder={running ? 'Send a follow-up (queued until this turn ends)…' : 'Send a follow-up prompt…'}
-        className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-600"
+        placeholder={
+          awaitingAnswer
+            ? 'Answer the agent…'
+            : running
+              ? 'Send a follow-up (queued until this turn ends)…'
+              : 'Send a follow-up prompt…'
+        }
+        className={`min-w-0 flex-1 rounded-md border bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 ${
+          awaitingAnswer ? 'border-sky-700 focus:border-sky-500' : 'border-neutral-800 focus:border-emerald-600'
+        }`}
       />
       <button
         onClick={() => void send()}
         disabled={!text.trim() || busy}
-        className="shrink-0 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-40"
+        className={`shrink-0 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-40 ${
+          awaitingAnswer ? 'bg-sky-600 hover:bg-sky-500' : 'bg-emerald-600 hover:bg-emerald-500'
+        }`}
       >
-        Send
+        {awaitingAnswer ? 'Answer' : 'Send'}
       </button>
     </div>
   )

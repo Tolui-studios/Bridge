@@ -92,6 +92,39 @@ export async function commitAll(repoPath: string, message: string): Promise<void
   await git(repoPath, ['commit', '-m', message])
 }
 
+/** Toolchain output that must never reach a commit. */
+const GENERATED_PATHS = ['Packages/', 'DevPackages/', 'sourcemap.json']
+
+/**
+ * Guarantee generated output is invisible to git, even in a repo whose
+ * committed .gitignore predates it.
+ *
+ * This exists because it already went wrong: a game scaffolded before
+ * `DevPackages/` was gitignored had 529 Wally files swept into a branch by an
+ * automated `git add -A`, merged, and then blocked every later pull. A
+ * committed .gitignore can't fix that retroactively for existing clones, and
+ * `add -A` is only ever as safe as the ignore rules in force at that moment.
+ *
+ * `.git/info/exclude` is local-only, needs no commit, and is shared by every
+ * worktree of the repo — so one write protects all agent workspaces at once.
+ */
+export function ensureGeneratedIgnored(repoPath: string): void {
+  try {
+    const dir = path.join(repoPath, '.git', 'info')
+    if (!fs.existsSync(path.join(repoPath, '.git'))) return
+    fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, 'exclude')
+    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+    const lines = current.split(/\r?\n/).map((line) => line.trim())
+    const missing = GENERATED_PATHS.filter((p) => !lines.includes(p))
+    if (missing.length === 0) return
+    const prefix = current.length > 0 && !current.endsWith('\n') ? '\n' : ''
+    fs.appendFileSync(file, `${prefix}# Added by Bridge: generated toolchain output\n${missing.join('\n')}\n`)
+  } catch {
+    // Best-effort hardening — never block a run over it.
+  }
+}
+
 /**
  * Locate the GitHub CLI from its standard install locations before falling
  * back to PATH — a long-running Electron process inherits a PATH captured at
@@ -365,16 +398,24 @@ export async function pull(game: Game): Promise<string> {
  * Returns the PR URL. If `gh` is unavailable or unauthenticated it falls back
  * to GitHub's compare page, which is the old behaviour — degraded, not broken.
  */
+export interface PrMessage {
+  title: string
+  body: string
+}
+
 export async function pushBranchForPr(
   game: Game,
   branch: string,
-  worktreePath?: string
+  worktreePath?: string,
+  message?: PrMessage
 ): Promise<string> {
   const remote = await remoteUrl(game.repoPath)
   const webUrl = toWebUrl(remote)
   if (!webUrl) throw new Error('This repo has no recognizable origin remote.')
 
   if (worktreePath) {
+    // Before any `add -A`: never let toolchain output into the branch.
+    ensureGeneratedIgnored(game.repoPath)
     try {
       const { stdout } = await git(worktreePath, ['status', '--porcelain'])
       if (stdout.trim() !== '') {
@@ -414,7 +455,7 @@ export async function pushBranchForPr(
   }
 
   const compareUrl = `${webUrl}/compare/${encodeURIComponent(game.defaultBranch)}...${encodeURIComponent(branch)}?expand=1`
-  return (await openPrWithGh(game, branch)) ?? compareUrl
+  return (await openPrWithGh(game, branch, message)) ?? compareUrl
 }
 
 /**
@@ -428,13 +469,22 @@ export async function pushBranchForPr(
  *
  * Run from the repo directory so gh resolves owner/repo from origin itself.
  */
-async function openPrWithGh(game: Game, branch: string): Promise<string | null> {
+async function openPrWithGh(
+  game: Game,
+  branch: string,
+  message?: PrMessage
+): Promise<string | null> {
   const gh = ghExecutable()
   const opts = { cwd: game.repoPath, windowsHide: true }
+  // A written title/body beats --fill, which would otherwise title the PR
+  // after a generated commit message like "chore: <branch> work in progress".
+  const describe = message
+    ? ['--title', message.title, '--body', message.body]
+    : ['--fill']
   try {
     const { stdout } = await execFileAsync(
       gh,
-      ['pr', 'create', '--head', branch, '--base', game.defaultBranch, '--fill'],
+      ['pr', 'create', '--head', branch, '--base', game.defaultBranch, ...describe],
       opts
     )
     const url = /https:\/\/\S+/.exec(stdout)?.[0]

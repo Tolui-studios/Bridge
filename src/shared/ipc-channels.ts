@@ -15,6 +15,7 @@ export const IPC = {
   AgentsInterrupt: 'bridge:agents:interrupt',
   AgentsSetMode: 'bridge:agents:set-mode',
   AgentsSetModel: 'bridge:agents:set-model',
+  AgentsClearTests: 'bridge:agents:clear-tests',
   AgentsList: 'bridge:agents:list',
   AgentsTranscript: 'bridge:agents:transcript',
   UsageGet: 'bridge:usage:get',

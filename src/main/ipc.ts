@@ -238,6 +238,10 @@ export function registerIpc(
     agents.setModel(sessionId, model)
   )
 
+  ipcMain.handle(IPC.AgentsClearTests, (_event, sessionId: string) => {
+    agents.clearTestSteps(sessionId)
+  })
+
   ipcMain.handle(IPC.AgentsList, (_event, gameId: string) => agents.list(gameId))
 
   ipcMain.handle(IPC.AgentsTranscript, (_event, sessionId: string) => agents.transcript(sessionId))
@@ -342,7 +346,24 @@ export function registerIpc(
       if (worktreePath && !isUnder(worktreePath, game.worktreeRoot)) {
         throw new Error('That path is not one of this game’s worktrees.')
       }
-      const url = await pushBranchForPr(game, branch, worktreePath)
+      // Describe the PR from the run that produced it, so reviewers get the
+      // task and the verification steps instead of "chore: work in progress".
+      const session = worktreePath ? agents.findByWorktree(gameId, worktreePath) : null
+      const message = session
+        ? {
+            title: session.task.split(/\r?\n/)[0].trim().slice(0, 72) || branch,
+            body: [
+              '## Task',
+              session.task.trim(),
+              ...(session.testSteps.length > 0
+                ? ['', '## How to test in Studio', ...session.testSteps.map((s) => `- [ ] ${s}`)]
+                : []),
+              '',
+              `_Opened by Bridge from \`${branch}\`._`
+            ].join('\n')
+          }
+        : undefined
+      const url = await pushBranchForPr(game, branch, worktreePath, message)
       void shell.openExternal(url)
       return url
     }

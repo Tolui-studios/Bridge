@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Game, WorktreeRow } from '@shared/types'
+import { ensureGeneratedIgnored } from './gitOps'
 
 const execFileAsync = promisify(execFile)
 const MAX_SLOTS = 32
@@ -47,6 +48,11 @@ export class WorktreeService {
         note: 'No git repo here — agent runs directly in the game folder (git init the repo to get worktree isolation).'
       }
     }
+
+    // Shared by every worktree, so one call keeps generated output from
+    // counting as "work" in the pristine check below — and from ever being
+    // swept into a commit.
+    ensureGeneratedIgnored(game.repoPath)
 
     await this.git(game.repoPath, ['worktree', 'prune'])
     const existing = await this.list(game.repoPath)
@@ -166,14 +172,29 @@ export class WorktreeService {
     const args = ['worktree', 'remove']
     if (force) args.push('--force')
     args.push(worktreePath)
-    try {
-      await this.git(game.repoPath, args)
-    } catch (err) {
-      const anyErr = err as { stderr?: string; message?: string }
+
+    let last = ''
+    // Windows can't delete a file another process has open. Some holders are
+    // momentary (the search indexer, Defender scanning a fresh checkout), so
+    // one retry clears them; an editor with the folder open never will.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.git(game.repoPath, args)
+        return
+      } catch (err) {
+        const anyErr = err as { stderr?: string; message?: string }
+        last = (anyErr.stderr || anyErr.message || 'git worktree remove failed').trim()
+        if (!isLockError(last) || attempt === 1) break
+        await new Promise((resolve) => setTimeout(resolve, 700))
+      }
+    }
+
+    if (isLockError(last)) {
       throw new Error(
-        (anyErr.stderr || anyErr.message || 'git worktree remove failed').trim().slice(0, 300)
+        `Windows won't let git delete ${path.basename(worktreePath)} because something still has it open — most often VS Code (Bridge's own "VS Code" button opens worktrees), a running Rojo server, or a terminal sitting in that folder. Close it and try again.`
       )
     }
+    throw new Error(last.slice(0, 300))
   }
 
   private async list(repoPath: string): Promise<WorktreeInfo[]> {
@@ -206,6 +227,13 @@ export class WorktreeService {
   private git(repoPath: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
     return execFileAsync('git', ['-C', repoPath, ...args], { windowsHide: true })
   }
+}
+
+/** A "someone else has this file open" failure rather than a git objection. */
+function isLockError(message: string): boolean {
+  return /permission denied|access is denied|being used by another process|EPERM|EBUSY|resource busy/i.test(
+    message
+  )
 }
 
 function normalize(p: string): string {

@@ -173,7 +173,11 @@ export class AgentService {
   ) {
     for (const persisted of this.store.loadAllSummaries()) {
       // testSteps post-dates earlier sessions on disk.
-      const summary = { ...persisted, testSteps: persisted.testSteps ?? [] }
+      const summary = {
+        ...persisted,
+        testSteps: persisted.testSteps ?? [],
+        pendingQuestion: persisted.pendingQuestion ?? null
+      }
       if (summary.status === 'running' || summary.status === 'idle') {
         // The app died while this session was live.
         summary.status = 'cancelled'
@@ -212,7 +216,8 @@ export class AgentService {
         costUsd: null,
         numTurns: null,
         error: null,
-        testSteps: []
+        testSteps: [],
+        pendingQuestion: null
       },
       items: [],
       abort: new AbortController(),
@@ -240,8 +245,13 @@ export class AgentService {
     }
     this.push(record, 'user', text)
     record.input.push(userMessage(text, record.claudeSessionId))
+    // Whatever the agent was waiting on, this reply is the answer.
+    const answered = record.summary.pendingQuestion !== null
+    record.summary.pendingQuestion = null
     if (record.summary.status === 'idle') {
       record.summary.status = 'running'
+      this.emitStatus(record)
+    } else if (answered) {
       this.emitStatus(record)
     }
   }
@@ -292,6 +302,34 @@ export class AgentService {
     const wasRunning = record.summary.status === 'running'
     record.input?.end()
     if (wasRunning) record.abort?.abort()
+  }
+
+  /**
+   * Drop a session's verification steps once the operator has worked through
+   * them. They stay in the transcript as `test step:` lines, so this clears
+   * the outstanding-work signal (badge, auto-popup) without losing the record.
+   */
+  clearTestSteps(sessionId: string): void {
+    const record = this.require(sessionId)
+    if (record.summary.testSteps.length === 0) return
+    record.summary.testSteps = []
+    this.emitStatus(record)
+    this.persist(record)
+  }
+
+  /**
+   * The most recent session that ran in this worktree — used to describe the
+   * PR raised from it (the agent's task and the steps it left to verify).
+   */
+  findByWorktree(gameId: string, cwd: string): AgentSessionSummary | null {
+    const target = cwd.replace(/[\\/]+$/, '').toLowerCase()
+    const matches = [...this.sessions.values()]
+      .map((r) => r.summary)
+      .filter(
+        (s) => s.gameId === gameId && (s.cwd ?? '').replace(/[\\/]+$/, '').toLowerCase() === target
+      )
+      .sort((a, b) => b.startedAt - a.startedAt)
+    return matches[0] ? { ...matches[0] } : null
   }
 
   list(gameId: string): AgentSessionSummary[] {
@@ -522,6 +560,20 @@ export class AgentService {
 
   private applyMarkers(record: SessionRecord, text: string): void {
     for (const marker of parseBridgeMarkers(text)) {
+      // A question for the operator: surface it and wait. The agent ends its
+      // turn after asking, so the session goes idle and the reply becomes its
+      // next message through the existing follow-up path.
+      if (marker.kind === 'ask') {
+        const question = marker.text.trim()
+        if (question) {
+          record.summary.pendingQuestion = record.summary.pendingQuestion
+            ? `${record.summary.pendingQuestion}\n${question}`
+            : question
+          this.push(record, 'goal', `question: ${question}`)
+          this.emitStatus(record)
+        }
+        continue
+      }
       // TEST steps are for the operator, not GOALS.md — collect, don't apply.
       if (marker.kind === 'test') {
         const step = marker.text.trim()

@@ -29,7 +29,8 @@ const summary: AgentSessionSummary = {
   costUsd: 0.1234,
   numTurns: 7,
   error: null,
-  testSteps: []
+  testSteps: [],
+  pendingQuestion: null
 }
 
 beforeAll(() => {

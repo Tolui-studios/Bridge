@@ -42,6 +42,29 @@ export default function TestChecklist({
   const doneCount = session.testSteps.filter((_, i) => checked[i]).length
   const allDone = doneCount === session.testSteps.length
 
+  // Everything verified: retire the checklist so the badge and auto-popup stop
+  // nagging. The steps remain in the run's transcript as `test step:` lines,
+  // so this discards the reminder, not the record.
+  useEffect(() => {
+    if (session.testSteps.length === 0 || !allDone) return
+    const timer = setTimeout(() => {
+      window.bridge
+        .clearAgentTestSteps(session.id)
+        .catch(() => {})
+        .finally(() => {
+          try {
+            localStorage.removeItem(storageKey)
+          } catch {
+            // Nothing to clean up.
+          }
+          onClose()
+        })
+    }, 900)
+    // Unticking within the grace period cancels it — a mis-click on the last
+    // box shouldn't silently bin the list.
+    return () => clearTimeout(timer)
+  }, [allDone, session.id, session.testSteps.length, storageKey, onClose])
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
@@ -84,7 +107,9 @@ export default function TestChecklist({
 
         <div className="mt-5 flex items-center justify-between">
           <span className={`text-[11px] ${allDone ? 'text-emerald-400' : 'text-neutral-500'}`}>
-            {doneCount} / {session.testSteps.length} checked
+            {allDone
+              ? 'All verified — clearing this checklist…'
+              : `${doneCount} / ${session.testSteps.length} checked`}
           </span>
           <button
             onClick={onClose}

@@ -102,6 +102,11 @@ export interface AgentSessionSummary {
    * run hands verification back to a human.
    */
   testSteps: string[]
+  /**
+   * A question the agent is waiting on, reported via `BRIDGE:ASK`. Cleared as
+   * soon as the operator replies — the reply is the agent's next message.
+   */
+  pendingQuestion: string | null
 }
 
 export type AgentStreamKind =
@@ -319,6 +324,8 @@ export interface BridgeApi {
   setAgentMode(sessionId: string, mode: AgentPermissionMode): Promise<void>
   /** Change a live session's model without restarting it ('' = default). */
   setAgentModel(sessionId: string, model: string): Promise<void>
+  /** Drop a session's test steps once they've all been verified. */
+  clearAgentTestSteps(sessionId: string): Promise<void>
   interruptAgent(sessionId: string): Promise<void>
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
