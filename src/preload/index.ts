@@ -6,6 +6,7 @@ import type {
   AgentEvent,
   AgentLaunchConfig,
   AgentPermissionMode,
+  GameDeleteTargets,
   AppSettings,
   BridgeApi,
   Game,
@@ -34,6 +35,8 @@ const api: BridgeApi = {
   createGame: (name: string) => ipcRenderer.invoke(IPC.GamesCreate, name),
   updateGame: (game: Game) => ipcRenderer.invoke(IPC.GamesUpdate, game),
   removeGame: (id: string) => ipcRenderer.invoke(IPC.GamesRemove, id),
+  deleteGame: (id: string, targets: GameDeleteTargets) =>
+    ipcRenderer.invoke(IPC.GamesDelete, id, targets),
   getGoals: (gameId: string) => ipcRenderer.invoke(IPC.GoalsGet, gameId),
   createGoalsTemplate: (gameId: string) => ipcRenderer.invoke(IPC.GoalsCreateTemplate, gameId),
   mutateGoals: (gameId: string, mutation: GoalsMutation) =>

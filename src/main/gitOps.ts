@@ -92,6 +92,32 @@ export async function commitAll(repoPath: string, message: string): Promise<void
   await git(repoPath, ['commit', '-m', message])
 }
 
+/**
+ * Delete the GitHub repository behind this game. Irreversible.
+ *
+ * `gh` needs the `delete_repo` scope, which is NOT in the default set — a
+ * token minted for normal work will fail here, so the error says how to fix it
+ * rather than surfacing gh's raw complaint.
+ */
+export async function deleteGithubRepo(repoPath: string): Promise<string> {
+  const remote = await remoteUrl(repoPath)
+  const key = normalizeRemoteKey(remote)
+  if (!key) throw new Error('This game has no origin remote, so there is no GitHub repo to delete.')
+  const slug = key.split('/').slice(1).join('/')
+  try {
+    await execFileAsync(ghExecutable(), ['repo', 'delete', slug, '--yes'], { windowsHide: true })
+    return slug
+  } catch (err) {
+    const detail = ((err as { stderr?: string; message?: string }).stderr ?? '').trim()
+    if (/delete_repo|scope/i.test(detail)) {
+      throw new Error(
+        `GitHub refused: your gh token lacks the delete_repo scope. Run "gh auth refresh -h github.com -s delete_repo", then try again. (${slug})`
+      )
+    }
+    throw new Error(`Could not delete ${slug}: ${detail.slice(0, 200) || 'gh failed'}`)
+  }
+}
+
 /** Toolchain output that must never reach a commit. */
 const GENERATED_PATHS = ['Packages/', 'DevPackages/', 'sourcemap.json']
 

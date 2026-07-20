@@ -397,6 +397,25 @@ export class TeamSync {
     return noteState(data[0] as NoteRow)
   }
 
+  /**
+   * Erase a game from the team server: goals, notes, mirrored sessions, and
+   * the game row itself. Irreversible, and it affects every teammate — only
+   * ever called from the explicit delete flow.
+   */
+  async deleteGame(game: Game): Promise<void> {
+    if (this.status !== 'online' || !this.client) {
+      throw new Error('Team sync is offline, so the shared copy cannot be removed.')
+    }
+    const key = await this.keyFor(game)
+    if (!key) throw new Error('This game has no git remote, so it was never on the team server.')
+    for (const table of ['goals', 'notes', 'sessions', 'games'] as const) {
+      const { error } = await this.client.from(table).delete().eq('game_key', key)
+      if (error) throw new Error(`Could not clear ${table}: ${error.message}`)
+    }
+    this.gameKeys.delete(game.id)
+    this.teamGames.delete(key)
+  }
+
   // ---------------------------------------------------------------- sessions
 
   publishSession(summary: AgentSessionSummary): void {

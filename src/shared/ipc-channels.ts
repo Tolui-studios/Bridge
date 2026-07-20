@@ -4,6 +4,7 @@ export const IPC = {
   GamesCreate: 'bridge:games:create',
   GamesUpdate: 'bridge:games:update',
   GamesRemove: 'bridge:games:remove',
+  GamesDelete: 'bridge:games:delete',
   GoalsGet: 'bridge:goals:get',
   GoalsCreateTemplate: 'bridge:goals:create-template',
   GoalsMutate: 'bridge:goals:mutate',

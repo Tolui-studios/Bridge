@@ -250,6 +250,16 @@ export interface GitRepoStatus {
   inStudioOrg: boolean | null
 }
 
+/** What a game deletion should destroy, beyond Bridge's own registry. */
+export interface GameDeleteTargets {
+  /** The repo folder and its worktrees on this machine. */
+  local: boolean
+  /** The GitHub repository. */
+  github: boolean
+  /** Goals, notes, and mirrored sessions on the team server. */
+  team: boolean
+}
+
 export interface WorktreeRow {
   path: string
   name: string
@@ -312,6 +322,8 @@ export interface BridgeApi {
   createGame(name: string): Promise<GameMutationResult>
   updateGame(game: Game): Promise<GameMutationResult>
   removeGame(id: string): Promise<void>
+  /** Delete a game beyond the registry. Every target is irreversible. */
+  deleteGame(id: string, targets: GameDeleteTargets): Promise<string>
   getGoals(gameId: string): Promise<GoalsState>
   createGoalsTemplate(gameId: string): Promise<GoalsState>
   mutateGoals(gameId: string, mutation: GoalsMutation): Promise<GoalsState>

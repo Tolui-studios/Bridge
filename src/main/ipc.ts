@@ -5,6 +5,7 @@ import type {
   AgentLaunchConfig,
   AgentPermissionMode,
   Game,
+  GameDeleteTargets,
   GoalsMutation,
   TeamConnectInput
 } from '@shared/types'
@@ -23,6 +24,7 @@ import {
   cloneRepo,
   commitAll,
   createGithubRepo,
+  deleteGithubRepo,
   ensureOnGithub,
   initRepo,
   moveRepoToOrg,
@@ -182,6 +184,66 @@ export function registerIpc(
     registry.remove(id)
     broadcastRegistry()
   })
+
+  /**
+   * Delete a game beyond Bridge's registry. Every target is opt-in and every
+   * one is irreversible, so each is attempted independently and reported —
+   * a failure to reach GitHub must not leave the local folder half-deleted
+   * with no explanation.
+   *
+   * Order matters: remote targets first, local files last. A local delete
+   * destroys the git remote reference the other two need to identify the game.
+   */
+  ipcMain.handle(
+    IPC.GamesDelete,
+    async (_event, gameId: string, targets: GameDeleteTargets) => {
+      const game = requireGame(gameId)
+      const done: string[] = []
+      const failed: string[] = []
+
+      agents.removeForGame(gameId)
+
+      if (targets.team) {
+        try {
+          await team.deleteGame(game)
+          done.push('team server')
+        } catch (err) {
+          failed.push(`team server: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
+      if (targets.github) {
+        try {
+          done.push(`GitHub (${await deleteGithubRepo(game.repoPath)})`)
+        } catch (err) {
+          failed.push(err instanceof Error ? err.message : String(err))
+        }
+      }
+
+      if (targets.local) {
+        // Worktrees are separate checkouts outside the repo — remove them or
+        // they are orphaned on disk with no repo to prune them.
+        for (const dir of [game.worktreeRoot, game.repoPath]) {
+          try {
+            if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
+          } catch (err) {
+            failed.push(
+              `could not delete ${dir}: ${err instanceof Error ? err.message : String(err)} (something may still have it open)`
+            )
+          }
+        }
+        if (!failed.some((f) => f.includes('could not delete'))) done.push('local files')
+      }
+
+      registry.remove(gameId)
+      broadcastRegistry()
+
+      const parts = [`Removed “${game.name}” from Bridge.`]
+      if (done.length) parts.push(`Also deleted: ${done.join(', ')}.`)
+      if (failed.length) parts.push(`Not deleted — ${failed.join('; ')}`)
+      return parts.join(' ')
+    }
+  )
 
   ipcMain.handle(IPC.GoalsGet, (_event, gameId: string) => goals.readStateById(gameId))
 

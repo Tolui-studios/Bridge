@@ -12,6 +12,7 @@ import AgentsSection from './AgentsSection'
 import RepoBar from './RepoBar'
 import TeamNote from './TeamNote'
 import ToolingSection from './ToolingSection'
+import DeleteGameModal from './DeleteGameModal'
 
 interface Props {
   game: Game
@@ -90,31 +91,26 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
           >
             Settings
           </button>
-          {confirmingRemove ? (
-            <span className="flex items-center gap-2">
-              <button
-                onClick={onRemove}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500"
-              >
-                Confirm remove
-              </button>
-              <button
-                onClick={() => setConfirmingRemove(false)}
-                className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-800"
-              >
-                Cancel
-              </button>
-            </span>
-          ) : (
-            <button
-              onClick={() => setConfirmingRemove(true)}
-              className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-500 transition-colors hover:border-red-900 hover:text-red-400"
-            >
-              Remove
-            </button>
-          )}
+          <button
+            onClick={() => setConfirmingRemove(true)}
+            title="Remove from Bridge, and optionally delete the files, the GitHub repo, and the team data"
+            className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-500 transition-colors hover:border-red-900 hover:text-red-400"
+          >
+            Delete…
+          </button>
         </div>
       </header>
+
+      {confirmingRemove && (
+        <DeleteGameModal
+          game={game}
+          onClose={() => setConfirmingRemove(false)}
+          onDeleted={() => {
+            setConfirmingRemove(false)
+            onRemove()
+          }}
+        />
+      )}
 
       {occupants.length > 0 && (
         <div className="mb-4 rounded-md border border-amber-800/60 bg-amber-950/30 px-3 py-2">
