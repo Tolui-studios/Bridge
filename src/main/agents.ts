@@ -1,5 +1,7 @@
-import { webContents } from 'electron'
+import { app, webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
   McpServerConfig,
@@ -29,6 +31,32 @@ const MAX_ITEM_TEXT = 2000
 const MAX_TOOL_RESULT_TEXT = 400
 const KEEP_SESSIONS_PER_GAME = 50
 const PERSIST_DEBOUNCE_MS = 1500
+
+/**
+ * Absolute path to the Claude Code binary, or undefined to let the SDK find it.
+ *
+ * In a packaged build the SDK resolves the binary relative to its own module
+ * path, which lands *inside* `app.asar`. Electron's fs shim makes that path
+ * readable, so the SDK's existence check passes — but the OS cannot spawn an
+ * executable from inside an archive, and the SDK reports it as a libc
+ * mismatch (misleading on Windows). `asarUnpack` puts a real copy on disk;
+ * this points the SDK at it.
+ */
+function claudeExecutable(): string | undefined {
+  if (!app.isPackaged) return undefined
+  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude'
+  const path = join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    '@anthropic-ai',
+    `claude-agent-sdk-${process.platform}-${process.arch}`,
+    exe
+  )
+  // If the platform package name ever changes, fall back to the SDK's own
+  // resolution rather than passing a path that definitely doesn't exist.
+  return existsSync(path) ? path : undefined
+}
 
 /**
  * Studio MCP servers for this launch, or `{}` when the whitelist didn't ask
@@ -325,6 +353,15 @@ export class AgentService {
         }
       }
 
+      const claudeExe = claudeExecutable()
+      if (app.isPackaged && !claudeExe) {
+        this.push(
+          record,
+          'stderr',
+          'could not find the unpacked Claude Code binary; falling back to the SDK default (this usually fails in a packaged build)'
+        )
+      }
+
       const footer = this.hooks.taskFooter?.(game.id) ?? ''
       let vaultBlock = ''
       if (vaultNotes.length > 0 && this.hooks.vaultContext) {
@@ -346,6 +383,7 @@ export class AgentService {
           // Studio-side work (instances, generated meshes, asset uploads) runs
           // through this; only spawned when the whitelist opted in.
           mcpServers: mcpServersFor(record.summary.allowedTools),
+          ...(claudeExe ? { pathToClaudeCodeExecutable: claudeExe } : {}),
           // Load the memory layers: ~/.claude/CLAUDE.md (studio-wide) and the
           // workspace CLAUDE.md — the SDK loads neither by default.
           settingSources: ['user', 'project'],
