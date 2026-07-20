@@ -5,6 +5,7 @@ import type {
   AddGameInput,
   AgentEvent,
   AgentLaunchConfig,
+  AgentPermissionMode,
   AppSettings,
   BridgeApi,
   Game,
@@ -42,6 +43,10 @@ const api: BridgeApi = {
   startAgent: (gameId: string, config: AgentLaunchConfig) =>
     ipcRenderer.invoke(IPC.AgentsStart, gameId, config),
   cancelAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsCancel, sessionId),
+  setAgentMode: (sessionId: string, mode: AgentPermissionMode) =>
+    ipcRenderer.invoke(IPC.AgentsSetMode, sessionId, mode),
+  setAgentModel: (sessionId: string, model: string) =>
+    ipcRenderer.invoke(IPC.AgentsSetModel, sessionId, model),
   repromptAgent: (sessionId: string, text: string) =>
     ipcRenderer.invoke(IPC.AgentsReprompt, sessionId, text),
   interruptAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsInterrupt, sessionId),

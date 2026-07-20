@@ -6,6 +6,7 @@ import type {
   Game
 } from '@shared/types'
 import TestChecklist from './TestChecklist'
+import { cleanIpcError } from '../lib/ipcError'
 import { ROBLOX_MCP_TOOL_GLOB } from '@shared/robloxMcp'
 import { useAgents } from '../hooks/useAgents'
 import { useVaultNotes } from '../hooks/useVault'
@@ -81,6 +82,7 @@ export default function AgentsSection({ game }: { game: Game }) {
   // handoff isn't something the operator has to go looking for. Each session
   // only auto-opens once per app run.
   const [testFor, setTestFor] = useState<AgentSessionSummary | null>(null)
+  const [liveError, setLiveError] = useState<string | null>(null)
   const autoShown = useRef<Set<string>>(new Set())
   useEffect(() => {
     const finished = sessions.find(
@@ -213,8 +215,10 @@ export default function AgentsSection({ game }: { game: Game }) {
             >
               {active.cwd ? `${basename(active.cwd)} · ` : ''}
               {active.status}
+              {liveError && <span className="ml-2 text-red-400">{liveError}</span>}
             </span>
-            <span className="flex shrink-0 gap-2">
+            <span className="flex shrink-0 items-center gap-2">
+              {activeLive && <LiveControls session={active} onError={setLiveError} />}
               {active.status === 'running' && (
                 <button
                   onClick={() => interrupt(active.id)}
@@ -412,6 +416,67 @@ const STATUS_STYLE: Record<AgentSessionSummary['status'], { dot: string; label: 
   done: { dot: 'bg-emerald-500', label: 'text-emerald-400' },
   error: { dot: 'bg-red-500', label: 'text-red-400' },
   cancelled: { dot: 'bg-neutral-600', label: 'text-neutral-500' }
+}
+
+/**
+ * Mode and model pickers for a session that is already running. The SDK
+ * applies both to the next turn, so a run started in Plan can be promoted to
+ * Accept edits — or moved onto a cheaper model — without losing its context.
+ */
+function LiveControls({
+  session,
+  onError
+}: {
+  session: AgentSessionSummary
+  onError: (message: string | null) => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const apply = (change: () => Promise<void>): void => {
+    setBusy(true)
+    onError(null)
+    change()
+      .catch((err) => onError(cleanIpcError(err)))
+      .finally(() => setBusy(false))
+  }
+
+  const select =
+    'rounded border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-[10px] text-neutral-400 outline-none hover:border-neutral-600 disabled:opacity-40'
+
+  return (
+    <>
+      <select
+        value={session.permissionMode}
+        disabled={busy}
+        onChange={(e) =>
+          apply(() =>
+            window.bridge.setAgentMode(session.id, e.target.value as AgentPermissionMode)
+          )
+        }
+        title="Change this running session's permission mode — applies from the next tool call"
+        className={select}
+      >
+        {MODE_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={session.model ?? ''}
+        disabled={busy}
+        onChange={(e) => apply(() => window.bridge.setAgentModel(session.id, e.target.value))}
+        title="Change this running session's model — applies from the next turn"
+        className={select}
+      >
+        {MODEL_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </>
+  )
 }
 
 function SessionRow({

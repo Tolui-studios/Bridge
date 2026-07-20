@@ -3,6 +3,7 @@ import { IPC } from '@shared/ipc-channels'
 import type {
   AddGameInput,
   AgentLaunchConfig,
+  AgentPermissionMode,
   Game,
   GoalsMutation,
   TeamConnectInput
@@ -226,6 +227,16 @@ export function registerIpc(
   ipcMain.handle(IPC.AgentsInterrupt, (_event, sessionId: string) => {
     agents.interrupt(sessionId)
   })
+
+  ipcMain.handle(
+    IPC.AgentsSetMode,
+    (_event, sessionId: string, mode: AgentPermissionMode) =>
+      agents.setPermissionMode(sessionId, mode)
+  )
+
+  ipcMain.handle(IPC.AgentsSetModel, (_event, sessionId: string, model: string) =>
+    agents.setModel(sessionId, model)
+  )
 
   ipcMain.handle(IPC.AgentsList, (_event, gameId: string) => agents.list(gameId))
 

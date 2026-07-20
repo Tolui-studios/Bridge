@@ -315,6 +315,10 @@ export interface BridgeApi {
   startAgent(gameId: string, config: AgentLaunchConfig): Promise<AgentSessionSummary>
   cancelAgent(sessionId: string): Promise<void>
   repromptAgent(sessionId: string, text: string): Promise<void>
+  /** Change a live session's permission mode without restarting it. */
+  setAgentMode(sessionId: string, mode: AgentPermissionMode): Promise<void>
+  /** Change a live session's model without restarting it ('' = default). */
+  setAgentModel(sessionId: string, model: string): Promise<void>
   interruptAgent(sessionId: string): Promise<void>
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>

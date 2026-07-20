@@ -13,6 +13,8 @@ export const IPC = {
   AgentsCancel: 'bridge:agents:cancel',
   AgentsReprompt: 'bridge:agents:reprompt',
   AgentsInterrupt: 'bridge:agents:interrupt',
+  AgentsSetMode: 'bridge:agents:set-mode',
+  AgentsSetModel: 'bridge:agents:set-model',
   AgentsList: 'bridge:agents:list',
   AgentsTranscript: 'bridge:agents:transcript',
   UsageGet: 'bridge:usage:get',

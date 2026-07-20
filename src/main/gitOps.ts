@@ -332,20 +332,38 @@ export async function pull(game: Game): Promise<string> {
     return (stdout + stderr).trim() || 'Already up to date.'
   } catch (err) {
     const anyErr = err as { stderr?: string; stdout?: string; message?: string }
-    throw new Error(
-      (anyErr.stderr || anyErr.stdout || anyErr.message || 'git pull failed').trim().slice(0, 400)
-    )
+    const raw = (anyErr.stderr || anyErr.stdout || anyErr.message || 'git pull failed').trim()
+
+    // Incoming commits add files that already exist here untracked. For these
+    // repos that is almost always generated output (Wally's Packages/ and
+    // DevPackages/, sourcemaps) sitting in a repo whose .gitignore predates
+    // it. git's own message is a wall of paths with no advice.
+    if (/untracked working tree files would be overwritten/i.test(raw)) {
+      const paths = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => /^[\w.@-]+[\\/]/.test(line))
+      const roots = [...new Set(paths.map((p) => p.split(/[\\/]/)[0]))]
+      const generated = roots.filter((r) => /^(Packages|DevPackages|sourcemap)/i.test(r))
+      const hint = generated.length
+        ? `${generated.join(', ')} is generated output — delete it and re-run the toolchain (wally install) to restore it, then pull again.`
+        : 'Move or delete those files, then pull again.'
+      return Promise.reject(
+        new Error(
+          `Pull blocked: the incoming commits add ${paths.length || 'some'} file(s) that already exist here as untracked${roots.length ? ` (under ${roots.join(', ')})` : ''}. ${hint}`
+        )
+      )
+    }
+    throw new Error(raw.slice(0, 400))
   }
 }
 
 /**
- * Push a branch and return the GitHub compare URL for opening a PR.
+ * Take an agent's worktree from "has changes" to "PR is open", in one press:
+ * commit anything pending, push the branch, then create the PR with `gh`.
  *
- * The common reason a PR "doesn't work" is that the agent edited files but
- * never committed, leaving the branch identical to its base — GitHub then has
- * nothing to compare. When a worktree is given, its pending changes are
- * committed onto its own branch first so the button does the obvious thing
- * instead of refusing.
+ * Returns the PR URL. If `gh` is unavailable or unauthenticated it falls back
+ * to GitHub's compare page, which is the old behaviour — degraded, not broken.
  */
 export async function pushBranchForPr(
   game: Game,
@@ -394,5 +412,51 @@ export async function pushBranchForPr(
     const anyErr = err as { stderr?: string; message?: string }
     throw new Error((anyErr.stderr || anyErr.message || 'git push failed').trim().slice(0, 400))
   }
-  return `${webUrl}/compare/${encodeURIComponent(game.defaultBranch)}...${encodeURIComponent(branch)}?expand=1`
+
+  const compareUrl = `${webUrl}/compare/${encodeURIComponent(game.defaultBranch)}...${encodeURIComponent(branch)}?expand=1`
+  return (await openPrWithGh(game, branch)) ?? compareUrl
+}
+
+/**
+ * Create the pull request itself with `gh`, returning its URL — or null to
+ * fall back to the compare page.
+ *
+ * The compare page is only a pre-filled form: it still has to be submitted by
+ * hand, and a second click just opens the same form again. `gh` creates the
+ * real PR, titles it from the commits (`--fill`), and can hand back the URL of
+ * an existing PR instead of erroring on the second press.
+ *
+ * Run from the repo directory so gh resolves owner/repo from origin itself.
+ */
+async function openPrWithGh(game: Game, branch: string): Promise<string | null> {
+  const gh = ghExecutable()
+  const opts = { cwd: game.repoPath, windowsHide: true }
+  try {
+    const { stdout } = await execFileAsync(
+      gh,
+      ['pr', 'create', '--head', branch, '--base', game.defaultBranch, '--fill'],
+      opts
+    )
+    const url = /https:\/\/\S+/.exec(stdout)?.[0]
+    return url ?? null
+  } catch (err) {
+    const detail = ((err as { stderr?: string; message?: string }).stderr ?? '').trim()
+    // Already open: hand back the existing PR rather than reporting a failure.
+    if (/already exists/i.test(detail)) {
+      try {
+        const { stdout } = await execFileAsync(
+          gh,
+          ['pr', 'view', branch, '--json', 'url', '--jq', '.url'],
+          opts
+        )
+        const url = stdout.trim()
+        if (url.startsWith('https://')) return url
+      } catch {
+        // Fall through to the compare page.
+      }
+    }
+    // gh missing, unauthenticated, or anything else — the compare page still
+    // works, so never fail the whole action over it.
+    return null
+  }
 }

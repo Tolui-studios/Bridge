@@ -17,6 +17,7 @@ import { ROBLOX_MCP_PACKAGE, ROBLOX_MCP_SERVER, wantsRobloxMcp } from '@shared/r
 import type {
   AgentEvent,
   AgentLaunchConfig,
+  AgentPermissionMode,
   AgentSessionSummary,
   AgentStatus,
   AgentStreamItem,
@@ -254,6 +255,34 @@ export class AgentService {
     void q.interrupt().catch((err: unknown) => {
       this.push(record, 'stderr', `interrupt failed: ${err instanceof Error ? err.message : String(err)}`)
     })
+  }
+
+  /**
+   * Change the permission mode of a LIVE session. The SDK applies it to the
+   * next tool call, so a run started in `plan` can be promoted to
+   * `acceptEdits` without losing its context and starting over.
+   */
+  async setPermissionMode(sessionId: string, mode: AgentPermissionMode): Promise<void> {
+    const record = this.require(sessionId)
+    if (!isLive(record.summary.status)) throw new Error('That session has already finished.')
+    const q = record.query
+    if (!q) throw new Error('Session is still starting.')
+    await q.setPermissionMode(mode)
+    record.summary.permissionMode = mode
+    this.push(record, 'system', `permission mode → ${mode}`)
+    this.emitStatus(record)
+  }
+
+  /** Change the model of a LIVE session (empty string = session default). */
+  async setModel(sessionId: string, model: string): Promise<void> {
+    const record = this.require(sessionId)
+    if (!isLive(record.summary.status)) throw new Error('That session has already finished.')
+    const q = record.query
+    if (!q) throw new Error('Session is still starting.')
+    await q.setModel(model || undefined)
+    record.summary.model = model || null
+    this.push(record, 'system', `model → ${model || 'session default'}`)
+    this.emitStatus(record)
   }
 
   /** End the session: gently when idle, hard-abort when a turn is running. */
