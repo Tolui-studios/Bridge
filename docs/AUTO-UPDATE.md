@@ -39,13 +39,24 @@ Updates are decided by **semver comparison against `package.json`**, so every
 release needs a real, increasing version. A fixed tag like `prerelease` will
 never trigger an update.
 
-```sh
-npm version patch      # or minor / major — bumps package.json and tags
-$env:GH_TOKEN = "<a token with write access>"   # NOT the shipped read-only one
-npm run release
+```powershell
+npm version patch                  # bumps package.json, commits, tags
+$env:GH_TOKEN = (gh auth token)    # publish key — NOT the shipped read-only one
+npm run release:win                # macOS: npm run release
 ```
 
-`npm run release` builds and uploads both artifacts. Both are mandatory:
+`npm version patch` requires a clean working tree — commit your changes first.
+
+The release scripts **push before they build** (`push:release`), because GitHub
+cannot attach a published release to commits it has never seen. Skipping that
+produces a release tagged at the wrong commit with missing assets — recoverable
+with `gh release delete <tag> --cleanup-tag`, then push and re-run.
+
+`release:win` writes build output to `%LOCALAPPDATA%\BridgeBuild` rather than
+`dist/`. The repo lives in OneDrive, which locks `app.asar` mid-build
+(`EBUSY`) and would otherwise sync ~300 MB per build to the cloud.
+
+Both artifacts are mandatory:
 
 | Artifact | Why |
 |---|---|
