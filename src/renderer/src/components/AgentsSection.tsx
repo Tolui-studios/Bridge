@@ -45,9 +45,9 @@ function expandTools(tools: string[]): string[] {
 }
 
 const MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'claude-opus-5', label: 'Opus 5' },
   { value: 'claude-sonnet-5', label: 'Sonnet 5' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-  { value: 'claude-opus-4-8', label: 'Opus 4.8' },
   { value: 'claude-fable-5', label: 'Fable 5 (max cost)' },
   { value: '', label: 'Session default' }
 ]
@@ -293,7 +293,7 @@ function LaunchForm({
   const [task, setTask] = useState('')
   const [mode, setMode] = useState<AgentPermissionMode>('acceptEdits')
   const [tools, setTools] = useState<string[]>(DEFAULT_TOOLS)
-  const [model, setModel] = useState<string>('claude-sonnet-5')
+  const [model, setModel] = useState<string>('claude-opus-5')
   const [selectedNotes, setSelectedNotes] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const vaultNotes = useVaultNotes(gameId)
