@@ -40,47 +40,8 @@ import fs from 'node:fs'
 import { scaffoldRobloxGame } from './robloxScaffold'
 import { gameTooling } from './tooling'
 import type { UpdaterService } from './updater'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
-
-/**
- * Open a folder in VS Code. `code` is a `.cmd` shim on Windows (so it needs a
- * shell), and on macOS it only exists once the user has run "Shell Command:
- * Install 'code' command in PATH" — hence the `open -a` fallback there.
- *
- * `--disable-workspace-trust` skips the trust prompt, which would otherwise
- * appear for every freshly created `agent-<n>` directory. It affects only the
- * launched session, never the user's global trust settings — and a worktree is
- * a checkout of a repo they already own.
- */
-async function openInVsCode(dir: string): Promise<void> {
-  const flag = '--disable-workspace-trust'
-  const attempts: [string, string[]][] =
-    process.platform === 'win32'
-      ? [['cmd', ['/c', 'code', flag, dir]]]
-      : process.platform === 'darwin'
-        ? [
-            ['code', [flag, dir]],
-            ['open', ['-a', 'Visual Studio Code', '--args', flag, dir]]
-          ]
-        : [['code', [flag, dir]]]
-
-  let lastError: unknown = null
-  for (const [command, args] of attempts) {
-    try {
-      await execFileAsync(command, args, { windowsHide: true })
-      return
-    } catch (err) {
-      lastError = err
-    }
-  }
-  const detail = lastError instanceof Error ? ` (${lastError.message.trim().slice(0, 120)})` : ''
-  throw new Error(
-    `Could not launch VS Code. Install it, then run "Shell Command: Install 'code' command in PATH" from its Command Palette so \`code\` is available.${detail}`
-  )
-}
+import type { RojoService } from './rojo'
+import { openInVsCode } from './editor'
 
 export function registerIpc(
   registry: GameRegistry,
@@ -92,6 +53,7 @@ export function registerIpc(
   team: TeamSync,
   worktrees: WorktreeService,
   toolchain: ToolchainService,
+  rojo: RojoService,
   updater: UpdaterService
 ): void {
   const requireGame = (gameId: string): Game => {
@@ -181,6 +143,7 @@ export function registerIpc(
 
   ipcMain.handle(IPC.GamesRemove, (_event, id: string) => {
     agents.removeForGame(id)
+    rojo.removeForGame(id)
     registry.remove(id)
     broadcastRegistry()
   })
@@ -202,6 +165,8 @@ export function registerIpc(
       const failed: string[] = []
 
       agents.removeForGame(gameId)
+      // Before any local deletion — a live serve's cwd would block rmSync on Windows.
+      rojo.removeForGame(gameId)
 
       if (targets.team) {
         try {
@@ -430,6 +395,12 @@ export function registerIpc(
       return url
     }
   )
+
+  ipcMain.handle(IPC.RojoOpenBuild, (_event, gameId: string) =>
+    rojo.openBuild(requireGame(gameId))
+  )
+  ipcMain.handle(IPC.RojoStop, (_event, gameId: string) => rojo.stop(gameId))
+  ipcMain.handle(IPC.RojoStatus, (_event, gameId: string) => rojo.status(gameId))
 
   ipcMain.handle(IPC.GitMoveToOrg, async (_event, gameId: string) => {
     const game = requireGame(gameId)

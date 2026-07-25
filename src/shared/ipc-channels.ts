@@ -42,6 +42,9 @@ export const IPC = {
   GitWorktreeOpenEditor: 'bridge:git:worktree-open-editor',
   GitCreatePr: 'bridge:git:create-pr',
   GitMoveToOrg: 'bridge:git:move-to-org',
+  RojoOpenBuild: 'bridge:rojo:open-build',
+  RojoStop: 'bridge:rojo:stop',
+  RojoStatus: 'bridge:rojo:status',
   UpdateGet: 'bridge:update:get',
   UpdateInstall: 'bridge:update:install',
   EvGoalsChanged: 'bridge:event:goals-changed',
@@ -51,5 +54,6 @@ export const IPC = {
   EvSettingsChanged: 'bridge:event:settings-changed',
   EvTeamChanged: 'bridge:event:team-changed',
   EvTeamNote: 'bridge:event:team-note',
-  EvUpdateChanged: 'bridge:event:update-changed'
+  EvUpdateChanged: 'bridge:event:update-changed',
+  EvRojoChanged: 'bridge:event:rojo-changed'
 } as const

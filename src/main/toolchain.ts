@@ -12,6 +12,20 @@ function rokitBinDir(): string {
   return path.join(os.homedir(), '.rokit', 'bin')
 }
 
+/** Env with ~/.rokit/bin prepended, so rokit-managed tools resolve even when Bridge's PATH is stale. */
+export function rokitEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: `${rokitBinDir()}${path.delimiter}${process.env.PATH ?? ''}`
+  }
+}
+
+/** Absolute rokit shim path for a tool when installed, else the bare name for PATH lookup. */
+export function rokitShim(tool: string): string {
+  const abs = path.join(rokitBinDir(), `${tool}${EXE}`)
+  return fs.existsSync(abs) ? abs : tool
+}
+
 /** Match a Rokit release asset to this platform/arch (naming: rokit-<v>-<platform>-<arch>.zip). */
 export function pickRokitAsset(
   assetNames: string[],
@@ -44,15 +58,8 @@ export class ToolchainService {
     const rokit = await this.ensureRokit(notes)
     if (!rokit) return notes
 
-    const env = {
-      ...process.env,
-      PATH: `${rokitBinDir()}${path.delimiter}${process.env.PATH ?? ''}`
-    }
-    const opts = { cwd: dir, env, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }
-    const shim = (tool: string): string => {
-      const abs = path.join(rokitBinDir(), `${tool}${EXE}`)
-      return fs.existsSync(abs) ? abs : tool
-    }
+    const opts = { cwd: dir, env: rokitEnv(), windowsHide: true, maxBuffer: 16 * 1024 * 1024 }
+    const shim = rokitShim
     const fail = (label: string, err: unknown): void => {
       const anyErr = err as { stderr?: string; message?: string }
       notes.push(`${label} failed: ${(anyErr.stderr || anyErr.message || '').trim().slice(0, 200)}`)

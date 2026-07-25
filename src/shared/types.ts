@@ -235,6 +235,25 @@ export interface ToolingReport {
   configs: string[]
 }
 
+/** Live `rojo serve` state for one game, pushed via EvRojoChanged. */
+export interface RojoServeStatus {
+  gameId: string
+  running: boolean
+  /** Listening port when running; 34872 preferred so the Studio plugin auto-detects it. */
+  port: number | null
+  /** True when Bridge attached to an already-running server for this project instead of spawning. */
+  reused: boolean
+  startedAt: number | null
+  /** Why the last serve ended when not running (crash/exit); cleared on the next start. */
+  note: string | null
+}
+
+export interface RojoOpenBuildResult {
+  status: RojoServeStatus
+  /** Non-fatal step failures: VS Code missing, Studio not found, reused-server notice. */
+  notes: string[]
+}
+
 export interface GitRepoStatus {
   isRepo: boolean
   branch: string | null
@@ -376,6 +395,12 @@ export interface BridgeApi {
   onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
   /** Open a folder in VS Code — the repo itself, or one of its worktrees. */
   openInEditor(gameId: string, targetPath?: string): Promise<void>
+  /** One click: VS Code + rojo serve (reuse or spawn on 34872+) + Roblox Studio. */
+  rojoOpenBuild(gameId: string): Promise<RojoOpenBuildResult>
+  /** Stop or detach the tracked serve. Returns an info message when there is one. */
+  rojoStop(gameId: string): Promise<string | null>
+  rojoStatus(gameId: string): Promise<RojoServeStatus>
+  onRojoChanged(cb: (status: RojoServeStatus) => void): () => void
   getUpdateState(): Promise<UpdateState>
   /** Install the downloaded update now and relaunch. */
   installUpdate(): Promise<void>

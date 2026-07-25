@@ -10,6 +10,7 @@ import Checklist from './Checklist'
 import EditableText from './EditableText'
 import AgentsSection from './AgentsSection'
 import RepoBar from './RepoBar'
+import RojoButton from './RojoButton'
 import TeamNote from './TeamNote'
 import ToolingSection from './ToolingSection'
 import DeleteGameModal from './DeleteGameModal'
@@ -84,6 +85,7 @@ export default function GamePanel({ game, onEdit, onRemove }: Props) {
           >
             VS Code
           </button>
+          <RojoButton game={game} onError={setActionError} onInfo={setActionInfo} />
           <button
             onClick={onEdit}
             title="Edit this game's registration (name, paths, branch)"

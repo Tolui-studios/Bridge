@@ -13,6 +13,7 @@ import { SettingsStore } from './settings'
 import { VaultService } from './vault'
 import { TeamSync } from './teamSync'
 import { ToolchainService } from './toolchain'
+import { RojoService } from './rojo'
 import { UpdaterService } from './updater'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
 import { registerIpc } from './ipc'
@@ -58,6 +59,7 @@ if (!gotLock) {
   let goals: GoalsService | null = null
   let agents: AgentService | null = null
   let usage: UsageService | null = null
+  let rojo: RojoService | null = null
 
   void app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.toluistudios.bridge')
@@ -86,6 +88,7 @@ if (!gotLock) {
     })
     goalsService.onExternalEdit = (game, raw) => void team.pushLocalEdit(game, raw)
     const toolchain = new ToolchainService()
+    rojo = new RojoService()
     agents = new AgentService(worktrees, new SessionStore(join(app.getPath('userData'), 'sessions')), {
       onSettled: () => void usage?.refresh(),
       onStatus: (summary) => team.publishSession(summary),
@@ -101,7 +104,7 @@ if (!gotLock) {
     })
     agentsRef = agents
     const updater = new UpdaterService(() => agentsRef?.liveCount() ?? 0)
-    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain, updater)
+    registerIpc(registry, goals, agents, usage, settings, vault, team, worktrees, toolchain, rojo, updater)
     goals.syncWatchers(registry.list())
     usage.start()
     void team.restore()
@@ -126,6 +129,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     usage?.stop()
     agents?.closeAll()
+    rojo?.stopAllSync()
     void goals?.closeAll()
   })
 

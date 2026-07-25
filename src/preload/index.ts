@@ -12,6 +12,7 @@ import type {
   Game,
   GoalsMutation,
   GoalsState,
+  RojoServeStatus,
   TeamConnectInput,
   TeamNoteState,
   UpdateState,
@@ -86,6 +87,9 @@ const api: BridgeApi = {
   moveToOrg: (gameId: string) => ipcRenderer.invoke(IPC.GitMoveToOrg, gameId),
   openInEditor: (gameId: string, targetPath?: string) =>
     ipcRenderer.invoke(IPC.GitWorktreeOpenEditor, gameId, targetPath),
+  rojoOpenBuild: (gameId: string) => ipcRenderer.invoke(IPC.RojoOpenBuild, gameId),
+  rojoStop: (gameId: string) => ipcRenderer.invoke(IPC.RojoStop, gameId),
+  rojoStatus: (gameId: string) => ipcRenderer.invoke(IPC.RojoStatus, gameId),
   getUpdateState: () => ipcRenderer.invoke(IPC.UpdateGet),
   installUpdate: () => ipcRenderer.invoke(IPC.UpdateInstall),
   onGoalsChanged: subscribe<GoalsState>(IPC.EvGoalsChanged),
@@ -95,7 +99,8 @@ const api: BridgeApi = {
   onSettingsChanged: subscribe<AppSettings>(IPC.EvSettingsChanged),
   onTeamChanged: subscribe<TeamState>(IPC.EvTeamChanged),
   onTeamNote: subscribe<{ gameId: string; note: TeamNoteState }>(IPC.EvTeamNote),
-  onUpdateChanged: subscribe<UpdateState>(IPC.EvUpdateChanged)
+  onUpdateChanged: subscribe<UpdateState>(IPC.EvUpdateChanged),
+  onRojoChanged: subscribe<RojoServeStatus>(IPC.EvRojoChanged)
 }
 
 contextBridge.exposeInMainWorld('bridge', api)
