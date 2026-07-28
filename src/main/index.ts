@@ -17,6 +17,7 @@ import { McpInstaller } from './mcpInstall'
 import { RojoService } from './rojo'
 import { UpdaterService } from './updater'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
+import { applyAgentNote } from './claudeNotes'
 import { registerIpc } from './ipc'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -93,7 +94,7 @@ if (!gotLock) {
     // Warm the managed MCP install off the critical path — launches fall back
     // to npx until it's ready.
     void mcpInstaller.ensureInstalled()
-    rojo = new RojoService()
+    rojo = new RojoService((dir) => toolchain.setupRepo(dir))
     agents = new AgentService(worktrees, new SessionStore(join(app.getPath('userData'), 'sessions')), {
       onSettled: () => void usage?.refresh(),
       onStatus: (summary) => team.publishSession(summary),
@@ -102,6 +103,10 @@ if (!gotLock) {
       robloxMcpEntry: () => mcpInstaller.entryPath(),
       taskFooter: (gameId) => buildTaskFooter(goalsService, gameId),
       applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker),
+      applyNote: (gameId, text) => {
+        const game = registry.get(gameId)
+        return game ? applyAgentNote(game.repoPath, text) : 'note skipped (unknown game)'
+      },
       vaultContext: (_gameId, relPaths) => vault.buildContext(relPaths),
       onRunEnded: (summary, extras) => {
         const game = registry.get(summary.gameId)

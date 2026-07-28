@@ -27,7 +27,7 @@ describe('scaffoldRobloxGame', () => {
     const project = JSON.parse(fs.readFileSync(path.join(dir, 'default.project.json'), 'utf8'))
     expect(project.name).toBe('Kingdom of Ash')
     expect(project.tree.ReplicatedStorage.Shared.$path).toBe('src/shared')
-    expect(project.tree.ReplicatedStorage.Packages.$path).toBe('Packages')
+    expect(project.tree.ReplicatedStorage.Packages.$path).toEqual({ optional: 'Packages' })
     expect(project.tree.ServerStorage.Stories.$path).toBe('src/stories')
     expect(project.tree.Lighting).toBeUndefined()
     expect(project.tree.ReplicatedFirst).toBeUndefined()
@@ -35,6 +35,7 @@ describe('scaffoldRobloxGame', () => {
     const rokit = fs.readFileSync(path.join(dir, 'rokit.toml'), 'utf8')
     expect(rokit).toContain('rojo-rbx/rojo@7.7.0')
     expect(rokit).toContain('Kampfkarren/selene@0.29.0')
+    expect(rokit).toContain('JohnnyMorganz/StyLua@2.5.2')
 
     const wally = fs.readFileSync(path.join(dir, 'wally.toml'), 'utf8')
     expect(wally).toContain('name = "tolui-studios/kingdom-of-ash"')

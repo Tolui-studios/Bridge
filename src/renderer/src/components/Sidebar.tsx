@@ -100,12 +100,14 @@ function TeamGamesSection() {
   const { team } = useTeam()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const unlinked = team.games.filter((g) => !g.linked)
   if (team.status !== 'online' || unlinked.length === 0) return null
 
   const link = (key: string, mode: 'locate' | 'clone'): void => {
     setError(null)
+    setNotice(null)
     void (async () => {
       // Locate needs the user to point at the existing clone; Clone goes
       // straight into the games folder with no picker.
@@ -117,7 +119,8 @@ function TeamGamesSection() {
       }
       setBusyKey(key)
       try {
-        await window.bridge.linkTeamGame(key, mode, picked)
+        const result = await window.bridge.linkTeamGame(key, mode, picked)
+        if (result.warnings.length > 0) setNotice(result.warnings.join(' '))
       } catch (err) {
         setError(cleanIpcError(err))
       } finally {
@@ -160,6 +163,7 @@ function TeamGamesSection() {
         </div>
       ))}
       {error && <p className="mt-1 px-2 text-[10px] leading-snug text-red-400">{error}</p>}
+      {notice && <p className="mt-1 px-2 text-[10px] leading-snug text-neutral-500">{notice}</p>}
     </div>
   )
 }

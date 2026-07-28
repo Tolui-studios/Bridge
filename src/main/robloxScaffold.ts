@@ -29,6 +29,7 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
       'wally = "UpliftGames/wally@0.3.2"',
       'wally-package-types = "JohnnyMorganz/wally-package-types@1.6.2"',
       'selene = "Kampfkarren/selene@0.29.0"',
+      'stylua = "JohnnyMorganz/StyLua@2.5.2"',
       ''
     ].join('\n')
   )
@@ -90,7 +91,9 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
           $className: 'DataModel',
           ReplicatedStorage: {
             Shared: { $path: 'src/shared' },
-            Packages: { $path: 'Packages' }
+            // Optional (Rojo 7.4+): Packages/ is Wally output and may not exist
+            // yet — serve must still start so Open Build can self-heal.
+            Packages: { $path: { optional: 'Packages' } }
           },
           ServerScriptService: {
             Server: { $path: 'src/server' }

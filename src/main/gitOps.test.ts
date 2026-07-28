@@ -3,7 +3,33 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { commitAll, initRepo, normalizeRemoteKey, parseAheadBehind, repoSlug, toWebUrl } from './gitOps'
+import {
+  commitAll,
+  initRepo,
+  isNonFastForward,
+  normalizeRemoteKey,
+  parseAheadBehind,
+  repoSlug,
+  toWebUrl
+} from './gitOps'
+
+describe('isNonFastForward', () => {
+  it('matches rejected-push stderr', () => {
+    expect(
+      isNonFastForward(
+        'To github.com:org/repo.git\n ! [rejected]  agent-tofu-1 -> agent-tofu-1 (non-fast-forward)\nerror: failed to push some refs'
+      )
+    ).toBe(true)
+    expect(isNonFastForward('hint: Updates were rejected. fetch first')).toBe(true)
+    expect(isNonFastForward('stale info')).toBe(true)
+  })
+
+  it('ignores auth and network failures', () => {
+    expect(isNonFastForward('fatal: Authentication failed for https://github.com/x/y')).toBe(false)
+    expect(isNonFastForward('fatal: unable to access: Could not resolve host')).toBe(false)
+    expect(isNonFastForward('')).toBe(false)
+  })
+})
 
 describe('normalizeRemoteKey', () => {
   it('maps ssh and https forms of the same repo to one key', () => {
