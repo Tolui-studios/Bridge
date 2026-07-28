@@ -53,6 +53,8 @@ const api: BridgeApi = {
     ipcRenderer.invoke(IPC.AgentsSetMode, sessionId, mode),
   setAgentModel: (sessionId: string, model: string) =>
     ipcRenderer.invoke(IPC.AgentsSetModel, sessionId, model),
+  setAgentTools: (sessionId: string, tools: string[]) =>
+    ipcRenderer.invoke(IPC.AgentsSetTools, sessionId, tools),
   clearAgentTestSteps: (sessionId: string) =>
     ipcRenderer.invoke(IPC.AgentsClearTests, sessionId),
   repromptAgent: (sessionId: string, text: string) =>

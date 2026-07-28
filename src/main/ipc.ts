@@ -270,6 +270,10 @@ export function registerIpc(
     agents.setModel(sessionId, model)
   )
 
+  ipcMain.handle(IPC.AgentsSetTools, (_event, sessionId: string, tools: string[]) =>
+    agents.setTools(sessionId, tools)
+  )
+
   ipcMain.handle(IPC.AgentsClearTests, (_event, sessionId: string) => {
     agents.clearTestSteps(sessionId)
   })

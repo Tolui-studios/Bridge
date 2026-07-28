@@ -47,6 +47,21 @@ function expandTools(tools: string[]): string[] {
   })
 }
 
+/** Is this pill lit for a session's (expanded) allowlist? */
+function pillActive(pill: string, allowed: string[]): boolean {
+  if (pill === SUBAGENT_PILL) return SUBAGENT_TOOL_NAMES.some((t) => allowed.includes(t))
+  if (pill === STUDIO_PILL) return allowed.includes(ROBLOX_MCP_TOOL_GLOB)
+  return allowed.includes(pill)
+}
+
+/** The full allowlist after toggling one pill, preserving entries pills don't cover. */
+function toggleTool(allowed: string[], pill: string): string[] {
+  const names = expandTools([pill])
+  return pillActive(pill, allowed)
+    ? allowed.filter((t) => !names.includes(t))
+    : [...allowed, ...names.filter((t) => !allowed.includes(t))]
+}
+
 const MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'claude-opus-5', label: 'Opus 5' },
   { value: 'claude-sonnet-5', label: 'Sonnet 5' },
@@ -248,6 +263,7 @@ export default function AgentsSection({ game }: { game: Game }) {
               )}
             </span>
           </div>
+          {activeLive && <LiveToolsRow session={active} onError={setLiveError} />}
           {active.cwd && !samePathIsh(active.cwd, game.repoPath) && (
             <WorkspaceActions game={game} session={active} />
           )}
@@ -602,6 +618,59 @@ function LiveControls({
         ))}
       </select>
     </>
+  )
+}
+
+/**
+ * Tool pills for a session that is already live — the same choices as the
+ * launch form, applied in place. A toggle replaces the session's allowlist
+ * from its next tool call; nothing restarts and no context is lost.
+ */
+function LiveToolsRow({
+  session,
+  onError
+}: {
+  session: AgentSessionSummary
+  onError: (message: string | null) => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const toggle = (pill: string): void => {
+    setBusy(true)
+    onError(null)
+    window.bridge
+      .setAgentTools(session.id, toggleTool(session.allowedTools, pill))
+      .catch((err) => onError(cleanIpcError(err)))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <span
+        className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-neutral-600"
+        title="Change what this live session may do — applies from its next tool call. The permission mode still wins where it auto-allows (Accept edits keeps approving file edits)."
+      >
+        Tools
+      </span>
+      {TOOL_CHOICES.map((tool) => {
+        const on = pillActive(tool, session.allowedTools)
+        return (
+          <button
+            key={tool}
+            disabled={busy}
+            onClick={() => toggle(tool)}
+            title={TOOL_HINTS[tool]}
+            className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors disabled:opacity-40 ${
+              on
+                ? 'border-emerald-600 bg-emerald-600/15 text-emerald-300'
+                : 'border-neutral-800 text-neutral-600 hover:border-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            {tool}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
