@@ -85,6 +85,12 @@ describe('buildTaskFooter', () => {
     expect(footer).toContain('- [ ] Supply lines')
   })
 
+  it('teaches both question channels: AskUserQuestion for choices, BRIDGE:ASK for open-ended', () => {
+    const footer = buildTaskFooter(new FakeGoals(DOC), 'g')
+    expect(footer).toContain('AskUserQuestion')
+    expect(footer).toContain('BRIDGE:ASK')
+  })
+
   it('falls back to the bare protocol when goals are unavailable', () => {
     const broken: GoalsPort = {
       readStateById: () => {

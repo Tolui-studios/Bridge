@@ -274,6 +274,18 @@ export function registerIpc(
     agents.clearTestSteps(sessionId)
   })
 
+  ipcMain.handle(
+    IPC.AgentsAnswer,
+    (_event, sessionId: string, answers: Record<string, string | string[]>) => {
+      agents.answerChoices(sessionId, answers)
+    }
+  )
+
+  ipcMain.handle(IPC.AgentsResume, (_event, sessionId: string, text: string) => {
+    const game = requireGame(agents.summaryOf(sessionId).gameId)
+    return agents.resume(game, sessionId, text)
+  })
+
   ipcMain.handle(IPC.AgentsList, (_event, gameId: string) => agents.list(gameId))
 
   ipcMain.handle(IPC.AgentsTranscript, (_event, sessionId: string) => agents.transcript(sessionId))

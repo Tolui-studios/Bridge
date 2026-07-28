@@ -11,6 +11,8 @@ export function useAgents(gameId: string): {
   cancel: (sessionId: string) => void
   reprompt: (sessionId: string, text: string) => Promise<boolean>
   interrupt: (sessionId: string) => void
+  answerChoices: (sessionId: string, answers: Record<string, string | string[]>) => Promise<boolean>
+  resume: (sessionId: string, text: string) => Promise<boolean>
   error: string | null
   clearError: () => void
 } {
@@ -114,6 +116,31 @@ export function useAgents(gameId: string): {
     window.bridge.interruptAgent(sessionId).catch((err) => setError(cleanIpcError(err)))
   }, [])
 
+  const answerChoices = useCallback(
+    async (sessionId: string, answers: Record<string, string | string[]>): Promise<boolean> => {
+      setError(null)
+      try {
+        await window.bridge.answerAgentChoices(sessionId, answers)
+        return true
+      } catch (err) {
+        setError(cleanIpcError(err))
+        return false
+      }
+    },
+    []
+  )
+
+  const resume = useCallback(async (sessionId: string, text: string): Promise<boolean> => {
+    setError(null)
+    try {
+      await window.bridge.resumeAgent(sessionId, text)
+      return true
+    } catch (err) {
+      setError(cleanIpcError(err))
+      return false
+    }
+  }, [])
+
   return {
     sessions,
     activeId,
@@ -123,6 +150,8 @@ export function useAgents(gameId: string): {
     cancel,
     reprompt,
     interrupt,
+    answerChoices,
+    resume,
     error,
     clearError: () => setError(null)
   }

@@ -184,6 +184,50 @@ export class WorktreeService {
     }
   }
 
+  /**
+   * Re-lease one SPECIFIC directory for a resumed session — the SDK's
+   * conversation transcript is keyed by the dir the session ran in, so a
+   * resume cannot take whatever the pool hands out. No `reset --hard` and no
+   * pristine check: the leftover state IS the point. Serialized with
+   * acquire/remove so the dir can't be claimed or reset mid-check.
+   */
+  acquireAt(game: Game, sessionId: string, dir: string): Promise<WorktreeLease> {
+    return this.serialize(() => this.acquireAtLocked(game, sessionId, dir))
+  }
+
+  private async acquireAtLocked(
+    game: Game,
+    sessionId: string,
+    dir: string
+  ): Promise<WorktreeLease> {
+    const resolved = path.resolve(dir)
+    if (normalize(resolved) === normalize(game.repoPath)) {
+      // The original run fell back to the repo dir (non-git game, or the
+      // worktree setup failed) — resume there too. Not an exclusive lease,
+      // same as the original fallback.
+      return {
+        path: game.repoPath,
+        branch: null,
+        created: false,
+        note: 'resuming directly in the game folder'
+      }
+    }
+    if (!isUnder(resolved, game.worktreeRoot)) {
+      throw new Error('That session’s workspace is not one of this game’s worktrees.')
+    }
+    if (!fs.existsSync(resolved)) {
+      throw new Error(
+        'This session’s worktree no longer exists on disk, so it cannot be resumed.'
+      )
+    }
+    if (this.inUse.has(normalize(resolved))) {
+      throw new Error('That worktree is busy with another agent session.')
+    }
+    this.inUse.set(normalize(resolved), sessionId)
+    this.propagateLocalClaudeMd(game.repoPath, resolved)
+    return { path: resolved, branch: null, created: false, note: null }
+  }
+
   /** Worktrees under this game's worktreeRoot, with live-usage flags. */
   async listWithUsage(game: Game): Promise<WorktreeRow[]> {
     if (!fs.existsSync(path.join(game.repoPath, '.git'))) return []

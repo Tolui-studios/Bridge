@@ -58,6 +58,10 @@ const api: BridgeApi = {
   repromptAgent: (sessionId: string, text: string) =>
     ipcRenderer.invoke(IPC.AgentsReprompt, sessionId, text),
   interruptAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsInterrupt, sessionId),
+  answerAgentChoices: (sessionId: string, answers: Record<string, string | string[]>) =>
+    ipcRenderer.invoke(IPC.AgentsAnswer, sessionId, answers),
+  resumeAgent: (sessionId: string, text: string) =>
+    ipcRenderer.invoke(IPC.AgentsResume, sessionId, text),
   listAgentSessions: (gameId: string) => ipcRenderer.invoke(IPC.AgentsList, gameId),
   getAgentTranscript: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsTranscript, sessionId),
   getUsage: () => ipcRenderer.invoke(IPC.UsageGet),
