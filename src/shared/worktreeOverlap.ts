@@ -32,6 +32,38 @@ function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').toLowerCase()
 }
 
+/** Files a live session declared via BRIDGE:CLAIM, keyed like its tree. */
+export interface ClaimSource {
+  /** The session's tree key — its worktree path (or any stable fallback). */
+  key: string
+  files: string[]
+}
+
+/**
+ * Fold declared claims into the changed-file sources before computeOverlap,
+ * so declared-but-untouched intent conflicts surface too. A claim whose key
+ * matches an existing source MERGES into it — computeOverlap dedupes within
+ * one source only, so pushing a second source under the same key would make
+ * a file conflict with itself. Unknown keys append as new sources (a session
+ * that declared intent before changing anything).
+ */
+export function withClaims(sources: OverlapSource[], claims: ClaimSource[]): OverlapSource[] {
+  const out = sources.map((source) => ({ key: source.key, files: [...source.files] }))
+  const byKey = new Map(out.map((source) => [normalizePath(source.key), source]))
+  for (const claim of claims) {
+    if (claim.files.length === 0) continue
+    const existing = byKey.get(normalizePath(claim.key))
+    if (existing) {
+      existing.files.push(...claim.files)
+    } else {
+      const added = { key: claim.key, files: [...claim.files] }
+      byKey.set(normalizePath(claim.key), added)
+      out.push(added)
+    }
+  }
+  return out
+}
+
 export function computeOverlap(sources: OverlapSource[]): OverlapResult {
   const holders = new Map<string, string[]>()
   const display: Record<string, string> = {}

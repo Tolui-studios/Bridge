@@ -7,7 +7,7 @@ import type {
   GitRepoStatus,
   WorktreeRow
 } from '@shared/types'
-import { computeOverlap, type OverlapSource } from '@shared/worktreeOverlap'
+import { computeOverlap, withClaims, type OverlapSource } from '@shared/worktreeOverlap'
 import { cleanIpcError } from '../lib/ipcError'
 import { samePathIsh } from '../lib/paths'
 import { useRojo } from '../hooks/useRojo'
@@ -134,8 +134,13 @@ export default function WorktreePanel({ game }: { game: Game }) {
     for (const w of changes.worktrees) {
       sources.push({ key: w.path, files: w.files.map((f) => f.path) })
     }
-    return computeOverlap(sources)
-  }, [changes])
+    // Declared intent (BRIDGE:CLAIM) from live sessions counts like changed
+    // files, so a collision surfaces before either agent has touched the file.
+    const claims = sessions
+      .filter((s) => (s.status === 'running' || s.status === 'idle') && s.claims.length > 0)
+      .map((s) => ({ key: s.cwd ?? `claims:${s.id}`, files: s.claims }))
+    return computeOverlap(withClaims(sources, claims))
+  }, [changes, sessions])
 
   /** Conflicted files per source, keyed slash/case-insensitively. */
   const conflictsByKey = useMemo(() => {
@@ -281,6 +286,14 @@ export default function WorktreePanel({ game }: { game: Game }) {
                     {firstLine(session.task)}
                   </span>
                 )}
+                {session && session.claims.length > 0 && (
+                  <span
+                    className="shrink-0 rounded border border-sky-900/60 bg-sky-950/30 px-1.5 py-0.5 text-[10px] text-sky-300"
+                    title={`Declared via BRIDGE:CLAIM:\n${session.claims.join('\n')}`}
+                  >
+                    {session.claims.length} claimed
+                  </span>
+                )}
                 {serving && (
                   <span
                     className="shrink-0 text-[10px] text-emerald-400"
@@ -361,7 +374,23 @@ export default function WorktreePanel({ game }: { game: Game }) {
                   </button>
                   {worktree.branch && status?.webUrl && (
                     <button
-                      onClick={() =>
+                      onClick={() => {
+                        // Soft pre-PR check: overlapping another live tree means
+                        // whoever merges second conflicts — warn, never block.
+                        if (rowConflicts.length > 0) {
+                          const listed = rowConflicts
+                            .slice(0, MAX_BANNER_FILES)
+                            .map((f) => overlap.display[f] ?? f)
+                            .join('\n')
+                          const extra =
+                            rowConflicts.length > MAX_BANNER_FILES
+                              ? `\n+${rowConflicts.length - MAX_BANNER_FILES} more`
+                              : ''
+                          const ok = window.confirm(
+                            `This branch overlaps other work on ${rowConflicts.length} file(s):\n${listed}${extra}\n\nMerging second will conflict — consider merging the other PR first. Create this PR anyway?`
+                          )
+                          if (!ok) return
+                        }
                         act(`pr-${worktree.path}`, async () => {
                           const url = await window.bridge.createPr(
                             game.id,
@@ -371,7 +400,7 @@ export default function WorktreePanel({ game }: { game: Game }) {
                           refresh()
                           return url
                         })
-                      }
+                      }}
                       disabled={busy !== null}
                       title="Commit any pending changes in this worktree, push the branch, and open a GitHub PR"
                       className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40"
