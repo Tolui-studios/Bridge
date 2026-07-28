@@ -397,6 +397,98 @@ export async function moveRepoToOrg(game: Game, org: string, slug: string): Prom
   return `https://github.com/${org}/${slug}`
 }
 
+/**
+ * Bounds the network half of the pre-launch auto-pull so a dead network (or a
+ * credential prompt, disabled via GIT_TERMINAL_PROMPT) can't hang a launch.
+ */
+const AUTO_PULL_FETCH_TIMEOUT_MS = 60_000
+
+/**
+ * Bring the local default branch up to date with origin before an agent
+ * starts — worktrees are created from (or reset to) that LOCAL branch, so a
+ * stale one silently hands every agent old code. Fast-forward only, and only
+ * the default branch is ever touched: via `merge --ff-only` when it is the
+ * checked-out branch, via a ref move when it is not (agent worktrees live on
+ * agent-* branches, so no working tree anywhere is disturbed).
+ *
+ * Returns a transcript-ready note; throws when the branch could not be
+ * updated (network failure, diverged history, dirty checkout in the way) —
+ * callers treat that as a warning and start from the local branch as-is.
+ */
+export async function autoPullDefaultBranch(game: Game): Promise<string> {
+  const { repoPath, defaultBranch } = game
+  if (!fs.existsSync(path.join(repoPath, '.git'))) {
+    return 'auto-pull skipped: not a git repo'
+  }
+  if (!(await remoteUrl(repoPath))) {
+    return 'auto-pull skipped: no origin remote'
+  }
+
+  try {
+    await execFileAsync('git', ['-C', repoPath, 'fetch', 'origin', defaultBranch], {
+      windowsHide: true,
+      timeout: AUTO_PULL_FETCH_TIMEOUT_MS,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+  } catch (err) {
+    const anyErr = err as { stderr?: string; message?: string; killed?: boolean }
+    const detail = anyErr.killed
+      ? `timed out after ${AUTO_PULL_FETCH_TIMEOUT_MS / 1000}s`
+      : (anyErr.stderr || anyErr.message || 'git fetch failed').trim().slice(0, 300)
+    throw new Error(`could not fetch origin/${defaultBranch}: ${detail}`)
+  }
+
+  const remoteRef = `origin/${defaultBranch}`
+  try {
+    await git(repoPath, ['rev-parse', '--verify', `refs/heads/${defaultBranch}`])
+  } catch {
+    // Fresh clone of an odd shape (or renamed base): no local ref yet.
+    await git(repoPath, ['branch', defaultBranch, remoteRef])
+    return `auto-pull: created local ${defaultBranch} from ${remoteRef}`
+  }
+
+  const { stdout } = await git(repoPath, [
+    'rev-list',
+    '--left-right',
+    '--count',
+    `${defaultBranch}...${remoteRef}`
+  ])
+  const { ahead, behind } = parseAheadBehind(stdout)
+  if (behind === 0) {
+    return ahead > 0
+      ? `auto-pull: ${defaultBranch} is up to date with origin (and ${ahead} commit(s) ahead — push when ready)`
+      : `auto-pull: ${defaultBranch} already up to date`
+  }
+  if (ahead > 0) {
+    throw new Error(
+      `${defaultBranch} has diverged from origin (${ahead} local-only, ${behind} remote-only commit(s)) — reconcile it in the repo before the branches drift further`
+    )
+  }
+
+  let checkedOut = ''
+  try {
+    checkedOut = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+  } catch {
+    // Unborn or detached HEAD — treated as "not on the default branch".
+  }
+  if (checkedOut === defaultBranch) {
+    try {
+      await git(repoPath, ['merge', '--ff-only', remoteRef])
+    } catch (err) {
+      const anyErr = err as { stderr?: string; stdout?: string; message?: string }
+      const detail = (anyErr.stderr || anyErr.stdout || anyErr.message || 'git merge failed')
+        .trim()
+        .slice(0, 300)
+      throw new Error(`could not fast-forward ${defaultBranch}: ${detail}`)
+    }
+  } else {
+    // behind > 0 && ahead === 0 above guarantees this ref move is a pure
+    // fast-forward, so -f loses nothing.
+    await git(repoPath, ['branch', '-f', defaultBranch, remoteRef])
+  }
+  return `auto-pull: fast-forwarded ${defaultBranch} ${behind} commit(s) to match origin`
+}
+
 /** Fast-forward pull; throws with git's message when it cannot fast-forward. */
 export async function pull(game: Game): Promise<string> {
   // Without an upstream, `git pull` fails with a multi-paragraph hint that
