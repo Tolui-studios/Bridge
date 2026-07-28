@@ -140,11 +140,13 @@ export class RojoService {
     }
 
     const notes: string[] = []
-    try {
-      await openInVsCode(game.repoPath)
-    } catch (err) {
-      notes.push(err instanceof Error ? err.message : String(err))
-    }
+    // VS Code start is slow (1-5s cold) and nothing downstream depends on it —
+    // let it race the serve pipeline and only collect its failure note at the
+    // end, so total wall time is max(vscode, serve) instead of the sum.
+    const vsCodeNote = openInVsCode(game.repoPath).then(
+      () => null,
+      (err: unknown) => (err instanceof Error ? err.message : String(err))
+    )
 
     const status = await this.ensureServe(game, projectName)
     if (status.reused) {
@@ -153,6 +155,9 @@ export class RojoService {
 
     const studioNote = await launchRobloxStudio()
     if (studioNote) notes.push(studioNote)
+
+    const editorNote = await vsCodeNote
+    if (editorNote) notes.push(editorNote)
 
     return { status, notes }
   }

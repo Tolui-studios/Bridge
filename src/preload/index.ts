@@ -10,6 +10,7 @@ import type {
   AppSettings,
   BridgeApi,
   Game,
+  GameCreateProgress,
   GoalsMutation,
   GoalsState,
   RojoServeStatus,
@@ -34,6 +35,7 @@ const api: BridgeApi = {
   listGames: () => ipcRenderer.invoke(IPC.GamesList),
   addGame: (input: AddGameInput) => ipcRenderer.invoke(IPC.GamesAdd, input),
   createGame: (name: string) => ipcRenderer.invoke(IPC.GamesCreate, name),
+  onGameCreateProgress: subscribe<GameCreateProgress>(IPC.EvGameCreateProgress),
   updateGame: (game: Game) => ipcRenderer.invoke(IPC.GamesUpdate, game),
   removeGame: (id: string) => ipcRenderer.invoke(IPC.GamesRemove, id),
   deleteGame: (id: string, targets: GameDeleteTargets) =>

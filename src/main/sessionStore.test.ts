@@ -86,4 +86,36 @@ describe('SessionStore', () => {
     store.removeGame('game-a')
     expect(store.loadAllSummaries()).toEqual([])
   })
+
+  it('loads summaries from the index without reading session bodies', () => {
+    const writer = new SessionStore(path.join(root, 'e'))
+    writer.save(summary('s1'), [item('s1', 'big transcript')])
+    writer.save(summary('s2'), [])
+
+    // Corrupt a session body AFTER the index was written — a fresh store must
+    // still list it, proving startup never parses transcripts.
+    fs.writeFileSync(path.join(root, 'e', 'game-a', 's1.json'), '{definitely not json', 'utf8')
+    const reader = new SessionStore(path.join(root, 'e'))
+    expect(reader.loadAllSummaries().map((s) => s.id).sort()).toEqual(['s1', 's2'])
+  })
+
+  it('rebuilds a missing index from legacy session files (self-healing migration)', () => {
+    const writer = new SessionStore(path.join(root, 'f'))
+    writer.save(summary('s1'), [item('s1', 'x')])
+    writer.save(summary('s2'), [])
+    const indexFile = path.join(root, 'f', 'game-a', 'index.json')
+    fs.rmSync(indexFile)
+
+    const reader = new SessionStore(path.join(root, 'f'))
+    expect(reader.loadAllSummaries().map((s) => s.id).sort()).toEqual(['s1', 's2'])
+    expect(fs.existsSync(indexFile)).toBe(true)
+  })
+
+  it('never counts index.json as a session when pruning', () => {
+    const store = new SessionStore(path.join(root, 'g'))
+    store.save(summary('s1'), [])
+    store.save(summary('s2'), [])
+    expect(store.prune('game-a', 2)).toEqual([])
+    expect(fs.existsSync(path.join(root, 'g', 'game-a', 'index.json'))).toBe(true)
+  })
 })
