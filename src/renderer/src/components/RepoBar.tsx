@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Game, GitRepoStatus, WorktreeRow } from '@shared/types'
 import { cleanIpcError } from '../lib/ipcError'
+import { samePathIsh } from '../lib/paths'
+import { useRojo } from '../hooks/useRojo'
 
 function timeAgo(epochMs: number): string {
   const mins = Math.round((Date.now() - epochMs) / 60000)
@@ -13,6 +15,7 @@ function timeAgo(epochMs: number): string {
 
 /** Git controls for a game: branch/ahead-behind/dirty, Pull, worktrees + PRs. */
 export default function RepoBar({ game }: { game: Game }) {
+  const rojoStatus = useRojo(game.id)
   const [status, setStatus] = useState<GitRepoStatus | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeRow[]>([])
   const [busy, setBusy] = useState<string | null>(null)
@@ -129,13 +132,27 @@ export default function RepoBar({ game }: { game: Game }) {
               No worktrees yet — launching an agent creates one.
             </li>
           )}
-          {worktrees.map((worktree) => (
-            <li key={worktree.path} className="flex items-center gap-2.5 rounded px-1 py-1">
+          {worktrees.map((worktree) => {
+            const serving =
+              Boolean(rojoStatus?.running) && samePathIsh(rojoStatus?.targetPath, worktree.path)
+            return (
+            <li
+              key={worktree.path}
+              className={`flex items-center gap-2.5 rounded px-1 py-1 ${serving ? 'bg-emerald-950/20' : ''}`}
+            >
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${worktree.inUse ? 'bg-amber-400' : 'bg-neutral-700'}`}
                 title={worktree.inUse ? 'In use by a live agent' : 'Free'}
               />
               <span className="font-mono text-[11px] text-neutral-300">{worktree.name}</span>
+              {serving && (
+                <span
+                  className="shrink-0 text-[10px] text-emerald-400"
+                  title={`rojo serve is pointed at this worktree on :${rojoStatus?.port}`}
+                >
+                  ● :{rojoStatus?.port}
+                </span>
+              )}
               {worktree.branch && (
                 <span className="truncate font-mono text-[10px] text-neutral-600" title={worktree.branch}>
                   {worktree.branch}
@@ -152,6 +169,22 @@ export default function RepoBar({ game }: { game: Game }) {
                 {worktree.ahead > 0 ? `+${worktree.ahead}` : '—'}
               </span>
               <span className="ml-auto flex shrink-0 gap-1.5">
+                <button
+                  onClick={() =>
+                    act(`test-${worktree.path}`, async () => {
+                      const result = await window.bridge.rojoOpenBuild(game.id, worktree.path)
+                      return [
+                        `Serving ${result.status.targetLabel ?? worktree.name} on :${result.status.port} — hit Connect in Studio.`,
+                        ...result.notes.filter((n) => !n.startsWith('Now serving'))
+                      ].join(' ')
+                    })
+                  }
+                  disabled={busy !== null || serving}
+                  title="Swap rojo serve to this worktree (and open it in VS Code) to test the agent's work in Studio"
+                  className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-emerald-300 disabled:opacity-40"
+                >
+                  {busy === `test-${worktree.path}` ? 'Serving…' : serving ? 'Serving' : 'Test'}
+                </button>
                 <button
                   onClick={() =>
                     act(`code-${worktree.path}`, () =>
@@ -218,7 +251,8 @@ export default function RepoBar({ game }: { game: Game }) {
                   ))}
               </span>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>

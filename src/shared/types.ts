@@ -244,6 +244,10 @@ export interface RojoServeStatus {
   /** True when Bridge attached to an already-running server for this project instead of spawning. */
   reused: boolean
   startedAt: number | null
+  /** Directory being served — the repo checkout or one of the game's worktrees. */
+  targetPath: string | null
+  /** 'main' for the repo checkout, else the worktree folder name (agent-2). */
+  targetLabel: string | null
   /** Why the last serve ended when not running (crash/exit); cleared on the next start. */
   note: string | null
 }
@@ -374,7 +378,11 @@ export interface BridgeApi {
   getTeamState(): Promise<TeamState>
   setTeamFocus(gameId: string | null): Promise<void>
   /** Adopt a team game on this machine: 'locate' an existing clone, or 'clone' fresh into a parent dir. */
-  linkTeamGame(key: string, mode: 'locate' | 'clone', path: string): Promise<Game>
+  linkTeamGame(
+    key: string,
+    mode: 'locate' | 'clone',
+    path: string
+  ): Promise<{ game: Game; warnings: string[] }>
   getTeamNote(gameId: string): Promise<TeamNoteState | null>
   saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
   gitStatus(gameId: string): Promise<GitRepoStatus>
@@ -396,7 +404,7 @@ export interface BridgeApi {
   /** Open a folder in VS Code — the repo itself, or one of its worktrees. */
   openInEditor(gameId: string, targetPath?: string): Promise<void>
   /** One click: VS Code + rojo serve (reuse or spawn on 34872+) + Roblox Studio. */
-  rojoOpenBuild(gameId: string): Promise<RojoOpenBuildResult>
+  rojoOpenBuild(gameId: string, targetPath?: string): Promise<RojoOpenBuildResult>
   /** Stop or detach the tracked serve. Returns an info message when there is one. */
   rojoStop(gameId: string): Promise<string | null>
   rojoStatus(gameId: string): Promise<RojoServeStatus>

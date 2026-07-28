@@ -87,7 +87,8 @@ const api: BridgeApi = {
   moveToOrg: (gameId: string) => ipcRenderer.invoke(IPC.GitMoveToOrg, gameId),
   openInEditor: (gameId: string, targetPath?: string) =>
     ipcRenderer.invoke(IPC.GitWorktreeOpenEditor, gameId, targetPath),
-  rojoOpenBuild: (gameId: string) => ipcRenderer.invoke(IPC.RojoOpenBuild, gameId),
+  rojoOpenBuild: (gameId: string, targetPath?: string) =>
+    ipcRenderer.invoke(IPC.RojoOpenBuild, gameId, targetPath),
   rojoStop: (gameId: string) => ipcRenderer.invoke(IPC.RojoStop, gameId),
   rojoStatus: (gameId: string) => ipcRenderer.invoke(IPC.RojoStatus, gameId),
   getUpdateState: () => ipcRenderer.invoke(IPC.UpdateGet),

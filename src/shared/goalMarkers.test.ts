@@ -11,12 +11,17 @@ describe('parseBridgeMarkers', () => {
       'BRIDGE:DONE Terrain blockout',
       'Moving on now.',
       '  BRIDGE:START Coin pickup loop  ',
-      'bridge:add Boss arena lighting'
+      'bridge:add Boss arena lighting',
+      'BRIDGE:NOTE Boss arenas must use the shared ArenaService, never bespoke spawn logic'
     ].join('\n')
     expect(parseBridgeMarkers(text)).toEqual([
       { kind: 'done', text: 'Terrain blockout' },
       { kind: 'start', text: 'Coin pickup loop' },
-      { kind: 'add', text: 'Boss arena lighting' }
+      { kind: 'add', text: 'Boss arena lighting' },
+      {
+        kind: 'note',
+        text: 'Boss arenas must use the shared ArenaService, never bespoke spawn logic'
+      }
     ])
   })
 

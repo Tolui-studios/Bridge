@@ -1,0 +1,54 @@
+import path from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { planServeAction, resolveServeTarget, samePath } from './rojoTarget'
+
+const repo = path.resolve('/games/kingdom')
+const worktree = path.resolve('/games/kingdom-worktrees/agent-2')
+
+describe('resolveServeTarget', () => {
+  it('defaults to the repo and labels it main', () => {
+    expect(resolveServeTarget({ repoPath: repo })).toEqual({
+      path: repo,
+      label: 'main',
+      isMain: true
+    })
+  })
+
+  it('labels a worktree by its folder name', () => {
+    expect(resolveServeTarget({ repoPath: repo }, worktree)).toEqual({
+      path: worktree,
+      label: 'agent-2',
+      isMain: false
+    })
+  })
+
+  it('treats an explicit repo path (with a trailing separator) as main', () => {
+    expect(resolveServeTarget({ repoPath: repo }, repo + path.sep).isMain).toBe(true)
+  })
+
+  it('is case-insensitive on Windows', () => {
+    const target = resolveServeTarget({ repoPath: repo }, repo.toUpperCase())
+    expect(target.isMain).toBe(process.platform === 'win32')
+  })
+})
+
+describe('planServeAction', () => {
+  it('starts when nothing is being served', () => {
+    expect(planServeAction(null, repo)).toBe('start')
+  })
+
+  it('reuses when the same target is already served', () => {
+    expect(planServeAction(repo, repo + path.sep)).toBe('reuse')
+  })
+
+  it('swaps when a different target is requested', () => {
+    expect(planServeAction(repo, worktree)).toBe('swap')
+    expect(planServeAction(worktree, repo)).toBe('swap')
+  })
+})
+
+describe('samePath', () => {
+  it('normalizes relative segments', () => {
+    expect(samePath(path.join(repo, 'x', '..'), repo)).toBe(true)
+  })
+})
