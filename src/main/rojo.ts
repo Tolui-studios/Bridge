@@ -8,6 +8,7 @@ import type { Game, RojoOpenBuildResult, RojoServeStatus } from '@shared/types'
 import { openInVsCode } from './editor'
 import { rokitEnv, rokitShim } from './toolchain'
 import { portFree, probeRojoApi } from './rojoApi'
+import { planServeAction, resolveServeTarget, samePath, type ServeTarget } from './rojoTarget'
 
 const execFileAsync = promisify(execFile)
 
@@ -28,6 +29,10 @@ interface ServeEntry {
   child: ChildProcess | null
   reused: boolean
   startedAt: number
+  /** Directory being served — the repo checkout or one of the game's worktrees. */
+  targetPath: string
+  /** 'main' or the worktree folder name (agent-2). */
+  label: string
   /** Last stdout+stderr lines, for crash/startup error messages. */
   tail: string[]
   /** Intentional kill in progress — the exit handler stays quiet. */
@@ -50,6 +55,15 @@ function killChildTree(child: ChildProcess): void {
     }, 1500)
     timer.unref()
     child.once('exit', () => clearTimeout(timer))
+  }
+}
+
+/** Bounded wait for a killed serve's port to actually free (Windows can hold the socket briefly). */
+async function waitForPortFree(port: number): Promise<void> {
+  const deadline = Date.now() + 1500
+  while (Date.now() < deadline) {
+    if (await portFree(port)) return
+    await new Promise((resolve) => setTimeout(resolve, 150))
   }
 }
 
@@ -105,30 +119,42 @@ async function launchRobloxStudio(): Promise<string | null> {
 }
 
 /**
- * Owns per-game `rojo serve` processes — Bridge's dev-loop launcher. One serve
- * per game, port 34872 preferred (see BASE_PORT), an already-running server
- * for the same project is attached to rather than duplicated, and every
- * spawned serve dies with its game (stop, removal) or with Bridge itself.
+ * Owns per-game `rojo serve` processes — Bridge's dev-loop launcher. ONE serve
+ * per game at a time, retargetable between the repo checkout ("main") and any
+ * agent worktree: opening a different target swaps the serve so port 34872
+ * (see BASE_PORT) stays pointed at whatever the operator is testing. An
+ * already-running external server for the same project is attached to rather
+ * than duplicated (main target only — an external server's cwd is unknowable),
+ * and every spawned serve dies with its game (stop, removal) or with Bridge.
  */
 export class RojoService {
   private serves = new Map<string, ServeEntry>()
   private pending = new Map<string, Promise<RojoOpenBuildResult>>()
   private lastNotes = new Map<string, string>()
 
-  /** One click: VS Code + rojo serve + Roblox Studio. Only the serve step is fatal. */
-  async openBuild(game: Game): Promise<RojoOpenBuildResult> {
+  /** setupRepo: ToolchainService.setupRepo — lets Open Build self-heal a missing toolchain/Packages. */
+  constructor(private readonly setupRepo?: (dir: string) => Promise<string[]>) {}
+
+  /**
+   * One click: VS Code + rojo serve + Roblox Studio (skipped when a serve was
+   * already running — on a swap Studio stays open and the operator just hits
+   * Connect again). Only the serve step is fatal. Single-flight per game: a
+   * concurrent call with a different target returns the in-flight result.
+   */
+  async openBuild(game: Game, targetPath?: string): Promise<RojoOpenBuildResult> {
     const inFlight = this.pending.get(game.id)
     if (inFlight) return inFlight
-    const run = this.doOpenBuild(game).finally(() => this.pending.delete(game.id))
+    const run = this.doOpenBuild(game, targetPath).finally(() => this.pending.delete(game.id))
     this.pending.set(game.id, run)
     return run
   }
 
-  private async doOpenBuild(game: Game): Promise<RojoOpenBuildResult> {
-    const projectFile = path.join(game.repoPath, 'default.project.json')
+  private async doOpenBuild(game: Game, targetPath?: string): Promise<RojoOpenBuildResult> {
+    const target = resolveServeTarget(game, targetPath)
+    const projectFile = path.join(target.path, 'default.project.json')
     if (!fs.existsSync(projectFile)) {
       throw new Error(
-        `${game.name} is not a Rojo project — no default.project.json in ${game.repoPath}.`
+        `${game.name} is not a Rojo project — no default.project.json in ${target.path}.`
       )
     }
     let projectName: string | null = null
@@ -140,26 +166,80 @@ export class RojoService {
     }
 
     const notes: string[] = []
+    await this.selfHeal(target.path, notes)
+
     try {
-      await openInVsCode(game.repoPath)
+      await openInVsCode(target.path)
     } catch (err) {
       notes.push(err instanceof Error ? err.message : String(err))
     }
 
-    const status = await this.ensureServe(game, projectName)
+    const existing = this.serves.get(game.id)
+    const wasRunning = Boolean(existing)
+    const action = planServeAction(existing?.targetPath ?? null, target.path)
+    if (action === 'swap' && existing) {
+      const oldPort = existing.port
+      const detachNote = this.stop(game.id)
+      if (detachNote) notes.push(detachNote)
+      // taskkill is synchronous but Windows can hold the socket briefly —
+      // wait a beat so the swap reclaims 34872 instead of drifting to 34873.
+      await waitForPortFree(oldPort)
+    }
+
+    const status = await this.ensureServe(game, projectName, target, notes)
     if (status.reused) {
       notes.push(`Attached to a rojo serve already running for this project on :${status.port}.`)
     }
 
-    const studioNote = await launchRobloxStudio()
-    if (studioNote) notes.push(studioNote)
+    if (!wasRunning) {
+      const studioNote = await launchRobloxStudio()
+      if (studioNote) notes.push(studioNote)
+    } else if (action === 'swap') {
+      notes.push(`Now serving ${target.label} on :${status.port} — hit Connect in Studio.`)
+    }
 
     return { status, notes }
   }
 
-  private async ensureServe(game: Game, projectName: string | null): Promise<RojoServeStatus> {
+  /**
+   * Open Build is the moment the operator needs the project to just work, so
+   * install what's missing instead of failing: run ToolchainService.setupRepo
+   * when Packages/ is absent (or rojo itself isn't installed), and if wally
+   * still couldn't produce Packages/ (offline), create an empty folder so a
+   * non-optional `$path: "Packages"` mount doesn't kill the serve at startup.
+   */
+  private async selfHeal(dir: string, notes: string[]): Promise<void> {
+    const packagesDir = path.join(dir, 'Packages')
+    const needsPackages = fs.existsSync(path.join(dir, 'wally.toml')) && !fs.existsSync(packagesDir)
+    const rojoMissing = !path.isAbsolute(rokitShim('rojo'))
+    if ((needsPackages || rojoMissing) && this.setupRepo) {
+      try {
+        notes.push(...(await this.setupRepo(dir)))
+      } catch (err) {
+        notes.push(`toolchain setup failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    if (needsPackages && !fs.existsSync(packagesDir)) {
+      try {
+        fs.mkdirSync(packagesDir, { recursive: true })
+        notes.push(
+          'Packages/ could not be installed (offline?) — created an empty folder so rojo serve can start; run "wally install" later.'
+        )
+      } catch {
+        // The serve error will say more.
+      }
+    }
+  }
+
+  private async ensureServe(
+    game: Game,
+    projectName: string | null,
+    target: ServeTarget,
+    notes: string[]
+  ): Promise<RojoServeStatus> {
     const existing = this.serves.get(game.id)
     if (existing) {
+      // Same target (a swap already stopped a mismatched serve in doOpenBuild).
       // Spawned child still tracked = still alive (exit handler untracks it).
       if (existing.child) return this.status(game.id)
       // External server — re-check it before claiming it's still serving.
@@ -173,13 +253,18 @@ export class RojoService {
 
       const info = await probeRojoApi(port)
       if (info) {
-        if (projectName && info.projectName === projectName) {
+        // Adopt an external same-project server for the main checkout only —
+        // /api/rojo doesn't expose the serve directory, so for a worktree
+        // target an external server can't be trusted to be serving it.
+        if (target.isMain && projectName && info.projectName === projectName) {
           this.serves.set(game.id, {
             gameId: game.id,
             port,
             child: null,
             reused: true,
             startedAt: Date.now(),
+            targetPath: target.path,
+            label: target.label,
             tail: [],
             stopping: false
           })
@@ -187,12 +272,17 @@ export class RojoService {
           this.broadcast(game.id)
           return this.status(game.id)
         }
-        continue // Some other project's server owns this port.
+        if (!target.isMain && port === BASE_PORT) {
+          notes.push(
+            'An external rojo serve still holds :34872 — stop it for one-click Connect; until then type the port into the Rojo plugin.'
+          )
+        }
+        continue // Some other server owns this port.
       }
 
       if (!(await portFree(port))) continue // Bound by something that isn't answering HTTP.
 
-      await this.spawnServe(game, port)
+      await this.spawnServe(game, port, target)
       return this.status(game.id)
     }
 
@@ -201,12 +291,12 @@ export class RojoService {
     )
   }
 
-  private spawnServe(game: Game, port: number): Promise<void> {
+  private spawnServe(game: Game, port: number, target: ServeTarget): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(
         rokitShim('rojo'),
         ['serve', 'default.project.json', '--port', String(port)],
-        { cwd: game.repoPath, env: rokitEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
+        { cwd: target.path, env: rokitEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
       )
       const entry: ServeEntry = {
         gameId: game.id,
@@ -214,6 +304,8 @@ export class RojoService {
         child,
         reused: false,
         startedAt: Date.now(),
+        targetPath: target.path,
+        label: target.label,
         tail: [],
         stopping: false
       }
@@ -249,7 +341,7 @@ export class RojoService {
         const enoent = (err as NodeJS.ErrnoException).code === 'ENOENT'
         fail(
           enoent
-            ? 'rojo not found — open the game once so Bridge installs the toolchain, or run "rokit install" in the repo.'
+            ? 'rojo not found — automatic toolchain install did not produce it; run "rokit install" in the project folder and retry.'
             : `Could not start rojo serve: ${err.message}`
         )
       })
@@ -309,6 +401,8 @@ export class RojoService {
         port: entry.port,
         reused: entry.reused,
         startedAt: entry.startedAt,
+        targetPath: entry.targetPath,
+        targetLabel: entry.label,
         note: null
       }
     }
@@ -318,8 +412,21 @@ export class RojoService {
       port: null,
       reused: false,
       startedAt: null,
+      targetPath: null,
+      targetLabel: null,
       note: this.lastNotes.get(gameId) ?? null
     }
+  }
+
+  /**
+   * Stop the serve if it is serving this directory — a live serve holds its
+   * cwd open, which blocks `git worktree remove` on Windows.
+   */
+  stopIfServingPath(gameId: string, dirPath: string): boolean {
+    const entry = this.serves.get(gameId)
+    if (!entry || !samePath(entry.targetPath, dirPath)) return false
+    this.stop(gameId)
+    return true
   }
 
   /** A deleted game's serve would hold its repoPath cwd and block folder removal. */

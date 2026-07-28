@@ -10,17 +10,20 @@ import type { ChecklistItem } from './types'
  *   BRIDGE:ADD <item text>     — record newly discovered work
  *   BRIDGE:TEST <step>         — one step for the operator to verify in Studio
  *   BRIDGE:ASK <question>      — blocked; needs an answer before continuing
+ *   BRIDGE:NOTE <fact>         — durable convention/gotcha for the game's CLAUDE.md
  *
- * TEST and ASK never touch GOALS.md. Agents cannot run the game, so instead of
- * pretending to playtest they hand back steps for a human; and when a decision
- * is genuinely the operator's, they ask rather than guessing.
+ * TEST, ASK and NOTE never touch GOALS.md. Agents cannot run the game, so
+ * instead of pretending to playtest they hand back steps for a human; when a
+ * decision is genuinely the operator's, they ask rather than guessing; and
+ * NOTE appends to the canonical repo CLAUDE.md (claudeNotes.ts), so what one
+ * agent learns reaches every future agent without waiting on a PR merge.
  */
 export interface BridgeMarker {
-  kind: 'done' | 'start' | 'add' | 'test' | 'ask'
+  kind: 'done' | 'start' | 'add' | 'test' | 'ask' | 'note'
   text: string
 }
 
-const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD|TEST|ASK)\s+(.+?)\s*$/gim
+const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD|TEST|ASK|NOTE)\s+(.+?)\s*$/gim
 
 export function parseBridgeMarkers(text: string): BridgeMarker[] {
   const markers: BridgeMarker[] = []

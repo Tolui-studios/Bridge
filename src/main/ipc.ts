@@ -97,6 +97,9 @@ export function registerIpc(
     }
     const result = registry.add(input)
     result.warnings.push(...ghNotes)
+    // Same self-setup as GamesCreate — an added repo is otherwise unservable
+    // until something else happens to install its toolchain and Packages/.
+    result.warnings.push(...(await toolchain.setupRepo(result.game.repoPath)))
     team.onGameAdded(result.game)
     broadcastRegistry()
     return result
@@ -346,10 +349,8 @@ export function registerIpc(
       const result = registry.add({ name: teamGame.name, repoPath })
       await team.afterLink(result.game)
       broadcastRegistry()
-      void toolchain.setupRepo(repoPath).then((notes) => {
-        for (const note of notes) console.log('[toolchain]', teamGame.name, '-', note)
-      })
-      return result.game
+      const warnings = await toolchain.setupRepo(repoPath)
+      return { game: result.game, warnings }
     }
   )
 
@@ -363,8 +364,12 @@ export function registerIpc(
   )
   ipcMain.handle(
     IPC.GitWorktreeRemove,
-    (_event, gameId: string, worktreePath: string, force: boolean) =>
-      worktrees.remove(requireGame(gameId), worktreePath, force)
+    (_event, gameId: string, worktreePath: string, force: boolean) => {
+      // A serve targeting this worktree holds its cwd open — stop it first or
+      // removal hits the Windows file-lock error.
+      rojo.stopIfServingPath(gameId, worktreePath)
+      return worktrees.remove(requireGame(gameId), worktreePath, force)
+    }
   )
   ipcMain.handle(
     IPC.GitCreatePr,
@@ -396,9 +401,14 @@ export function registerIpc(
     }
   )
 
-  ipcMain.handle(IPC.RojoOpenBuild, (_event, gameId: string) =>
-    rojo.openBuild(requireGame(gameId))
-  )
+  ipcMain.handle(IPC.RojoOpenBuild, (_event, gameId: string, targetPath?: string) => {
+    const game = requireGame(gameId)
+    // No target = the repo itself; otherwise it must be one of its worktrees.
+    if (targetPath && targetPath !== game.repoPath && !isUnder(targetPath, game.worktreeRoot)) {
+      throw new Error('That path is neither this game’s repo nor one of its worktrees.')
+    }
+    return rojo.openBuild(game, targetPath)
+  })
   ipcMain.handle(IPC.RojoStop, (_event, gameId: string) => rojo.stop(gameId))
   ipcMain.handle(IPC.RojoStatus, (_event, gameId: string) => rojo.status(gameId))
 

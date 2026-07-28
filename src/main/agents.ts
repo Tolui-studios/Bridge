@@ -148,6 +148,8 @@ export interface AgentServiceHooks {
   taskFooter?: (gameId: string) => string
   /** Applies a BRIDGE marker to GOALS.md; returns a transcript note. */
   applyMarker?: (gameId: string, marker: BridgeMarker) => string
+  /** Appends a BRIDGE:NOTE to the game's CLAUDE.md; returns a transcript note. */
+  applyNote?: (gameId: string, text: string) => string
   /** Builds the prompt block for attached vault notes. */
   vaultContext?: (gameId: string, relPaths: string[]) => string
   /** Installs toolchain + packages into the workspace before launch. */
@@ -456,6 +458,10 @@ export class AgentService {
           // Load the memory layers: ~/.claude/CLAUDE.md (studio-wide) and the
           // workspace CLAUDE.md — the SDK loads neither by default.
           settingSources: ['user', 'project'],
+          // The SDK's single switch for the Skill tool — without it the
+          // generate-3d-model skill the conventions point agents at may be
+          // unavailable. ('Skill' in allowedTools is the deprecated spelling.)
+          skills: 'all',
           abortController: abort,
           stderr: (data: string) => {
             const text = data.trim()
@@ -571,6 +577,23 @@ export class AgentService {
             : question
           this.push(record, 'goal', `question: ${question}`)
           this.emitStatus(record)
+        }
+        continue
+      }
+      // NOTE goes to the game's canonical CLAUDE.md (single writer), never
+      // the worktree copy — one agent's learning reaches every future agent.
+      if (marker.kind === 'note') {
+        const text = marker.text.trim()
+        if (text && this.hooks.applyNote) {
+          try {
+            this.push(record, 'goal', this.hooks.applyNote(record.summary.gameId, text))
+          } catch (err) {
+            this.push(
+              record,
+              'goal',
+              `note failed ('${text}'): ${err instanceof Error ? err.message : String(err)}`
+            )
+          }
         }
         continue
       }

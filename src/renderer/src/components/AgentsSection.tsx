@@ -7,8 +7,10 @@ import type {
 } from '@shared/types'
 import TestChecklist from './TestChecklist'
 import { cleanIpcError } from '../lib/ipcError'
+import { samePathIsh } from '../lib/paths'
 import { ROBLOX_MCP_TOOL_GLOB } from '@shared/robloxMcp'
 import { useAgents } from '../hooks/useAgents'
+import { useRojo } from '../hooks/useRojo'
 import { useVaultNotes } from '../hooks/useVault'
 import { useTeam } from '../hooks/useTeam'
 
@@ -243,6 +245,9 @@ export default function AgentsSection({ game }: { game: Game }) {
               )}
             </span>
           </div>
+          {active.cwd && !samePathIsh(active.cwd, game.repoPath) && (
+            <WorkspaceActions game={game} session={active} />
+          )}
           <Transcript items={transcript} running={active.status === 'running'} />
           {active.pendingQuestion && (
             <div className="mt-3 rounded-md border border-sky-900/70 bg-sky-950/30 px-3 py-2">
@@ -273,6 +278,95 @@ export default function AgentsSection({ game }: { game: Game }) {
 function basename(p: string): string {
   const parts = p.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] ?? p
+}
+
+/**
+ * Test / VS Code / PR actions for a session working in its own worktree — the
+ * whole verify loop without hunting for the row in RepoBar's worktree list.
+ * Test swaps the game's single rojo serve to this worktree (port 34872 stays
+ * the one the Studio plugin auto-connects to).
+ */
+function WorkspaceActions({ game, session }: { game: Game; session: AgentSessionSummary }) {
+  const rojo = useRojo(game.id)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const cwd = session.cwd
+  if (!cwd) return null
+  const serving = Boolean(rojo?.running) && samePathIsh(rojo?.targetPath, cwd)
+
+  const act = (label: string, action: () => Promise<string | void>): void => {
+    setBusy(label)
+    setError(null)
+    setMessage(null)
+    action()
+      .then((result) => {
+        if (typeof result === 'string') setMessage(result)
+      })
+      .catch((err) => setError(cleanIpcError(err)))
+      .finally(() => setBusy(null))
+  }
+
+  const buttonClass =
+    'rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40'
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-600">
+        {basename(cwd)}
+      </span>
+      <button
+        onClick={() =>
+          act('test', async () => {
+            const result = await window.bridge.rojoOpenBuild(game.id, cwd)
+            return [
+              `Serving ${result.status.targetLabel ?? basename(cwd)} on :${result.status.port} — hit Connect in Studio.`,
+              ...result.notes.filter((n) => !n.startsWith('Now serving'))
+            ].join(' ')
+          })
+        }
+        disabled={busy !== null || serving}
+        title="Swap rojo serve to this session's worktree (and open it in VS Code) to test its work in Studio"
+        className={`${buttonClass} hover:text-emerald-300`}
+      >
+        {busy === 'test' ? 'Serving…' : serving ? `Serving :${rojo?.port}` : 'Test in Studio'}
+      </button>
+      <button
+        onClick={() => act('code', () => window.bridge.openInEditor(game.id, cwd))}
+        disabled={busy !== null}
+        title={`Open ${cwd} in VS Code`}
+        className={buttonClass}
+      >
+        {busy === 'code' ? 'Opening…' : 'VS Code'}
+      </button>
+      <button
+        onClick={() =>
+          act('pr', async () => {
+            // The branch isn't on the session summary — resolve it at click time.
+            const rows = await window.bridge.listWorktrees(game.id)
+            const row = rows.find((w) => samePathIsh(w.path, cwd))
+            if (!row?.branch) {
+              throw new Error('No branch found for this workspace — is it still a worktree?')
+            }
+            return window.bridge.createPr(game.id, row.branch, row.path)
+          })
+        }
+        disabled={busy !== null}
+        title="Commit any pending changes in this worktree, push the branch, and open a GitHub PR"
+        className={buttonClass}
+      >
+        {busy === 'pr' ? 'Pushing…' : 'Create PR'}
+      </button>
+      {(message || error) && (
+        <span
+          className={`min-w-0 flex-1 truncate font-mono text-[10px] ${error ? 'text-red-400' : 'text-neutral-500'}`}
+          title={error ?? message ?? ''}
+        >
+          {error ?? message}
+        </span>
+      )}
+    </div>
+  )
 }
 
 interface LaunchInput {

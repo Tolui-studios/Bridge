@@ -11,7 +11,8 @@ interface Props {
 
 /**
  * The one-click dev loop: VS Code + rojo serve + Roblox Studio. While serving,
- * shows the port (34872 is what the Studio plugin auto-detects) with a Stop.
+ * shows the target and port (34872 is what the Studio plugin auto-detects)
+ * with a Stop; serving a worktree adds a one-click swap back to main.
  */
 export default function RojoButton({ game, onError, onInfo }: Props) {
   const status = useRojo(game.id)
@@ -29,7 +30,9 @@ export default function RojoButton({ game, onError, onInfo }: Props) {
     setBusy(true)
     try {
       const result = await window.bridge.rojoOpenBuild(game.id)
-      const parts = [`Serving on :${result.status.port} — connect the Rojo plugin in Studio.`]
+      const parts = [
+        `Serving ${result.status.targetLabel ?? 'main'} on :${result.status.port} — connect the Rojo plugin in Studio.`
+      ]
       parts.push(...result.notes)
       onInfo(parts.join(' '))
     } catch (err) {
@@ -50,14 +53,25 @@ export default function RojoButton({ game, onError, onInfo }: Props) {
   }
 
   if (status?.running) {
+    const servingWorktree = status.targetLabel !== null && status.targetLabel !== 'main'
     return (
       <span className="flex items-center gap-1.5">
         <span
-          title={`rojo serve ${status.reused ? '(started outside Bridge) ' : ''}on port ${status.port} — the Studio plugin auto-detects :34872`}
+          title={`rojo serve ${status.reused ? '(started outside Bridge) ' : ''}on port ${status.port}, serving ${status.targetPath ?? 'the repo'} — the Studio plugin auto-detects :34872`}
           className="rounded-md border border-emerald-800/60 bg-emerald-950/30 px-2.5 py-1.5 text-xs text-emerald-300"
         >
-          ● :{status.port}
+          ● {status.targetLabel ?? 'main'} :{status.port}
         </span>
+        {servingWorktree && (
+          <button
+            onClick={() => void openBuild()}
+            disabled={busy}
+            title="Swap the serve back to the main checkout"
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-800 disabled:opacity-40"
+          >
+            {busy ? 'Swapping…' : 'Serve main'}
+          </button>
+        )}
         <button
           onClick={() => void stop()}
           title={

@@ -79,6 +79,8 @@ describe('buildTaskFooter', () => {
     expect(footer).toContain('BRIDGE:DONE')
     expect(footer).toContain('BRIDGE:START')
     expect(footer).toContain('BRIDGE:ADD')
+    expect(footer).toContain('BRIDGE:NOTE')
+    expect(footer).toContain("subagent's output is")
     expect(footer).toContain('- [x] Terrain generation')
     expect(footer).toContain('- [ ] Supply lines')
   })
