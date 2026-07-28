@@ -342,7 +342,7 @@ export default function WorktreePanel({ game }: { game: Game }) {
                       })
                     }
                     disabled={busy !== null || serving}
-                    title="Swap rojo serve to this worktree (and open it in VS Code) to test the agent's work in Studio"
+                    title="Swap rojo serve to this worktree to test the agent's work in Studio"
                     className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-emerald-300 disabled:opacity-40"
                   >
                     {busy === `test-${worktree.path}` ? 'Serving…' : serving ? 'Serving' : 'Test'}

@@ -326,7 +326,7 @@ function WorkspaceActions({ game, session }: { game: Game; session: AgentSession
           })
         }
         disabled={busy !== null || serving}
-        title="Swap rojo serve to this session's worktree (and open it in VS Code) to test its work in Studio"
+        title="Swap rojo serve to this session's worktree to test its work in Studio"
         className={`${buttonClass} hover:text-emerald-300`}
       >
         {busy === 'test' ? 'Serving…' : serving ? `Serving :${rojo?.port}` : 'Test in Studio'}
