@@ -13,6 +13,7 @@ import {
   resolveServeTarget,
   samePath,
   shouldLaunchStudio,
+  shouldLaunchVsCode,
   type ServeTarget
 } from './rojoTarget'
 
@@ -142,14 +143,15 @@ export class RojoService {
   constructor(private readonly setupRepo?: (dir: string) => Promise<string[]>) {}
 
   /**
-   * One click: VS Code + rojo serve + Roblox Studio. VS Code opens only when
-   * the target is the main checkout (worktree serves are for testing, not
-   * editing); Studio launches only on a fresh serve of the main checkout — a
-   * worktree serve never launches Studio (it gets tested from the Studio the
-   * operator already has open), and on a swap Studio stays open; both cases
-   * just say to hit Connect again. Only the serve step is fatal. Single-flight
-   * per game: a concurrent call with a different target returns the in-flight
-   * result.
+   * One click: VS Code + rojo serve + Roblox Studio. VS Code opens only for
+   * the main checkout and never on a swap (worktree serves are for testing,
+   * not editing, and "Serve main" from a worktree is a retarget, not a fresh
+   * dev-loop open); Studio launches only on a fresh serve of the main
+   * checkout — a worktree serve never launches Studio (it gets tested from
+   * the Studio the operator already has open), and on a swap Studio stays
+   * open; both cases just say to hit Connect again. Only the serve step is
+   * fatal. Single-flight per game: a concurrent call with a different target
+   * returns the in-flight result.
    */
   async openBuild(game: Game, targetPath?: string): Promise<RojoOpenBuildResult> {
     const inFlight = this.pending.get(game.id)
@@ -178,21 +180,23 @@ export class RojoService {
     const notes: string[] = []
     await this.selfHeal(target.path, notes)
 
+    const existing = this.serves.get(game.id)
+    const action = planServeAction(existing?.targetPath ?? null, target.path)
+
     // VS Code start is slow (1-5s cold) and nothing downstream depends on it —
     // let it race the serve pipeline and only collect its failure note at the
     // end, so total wall time is max(vscode, serve) instead of the sum. It
-    // opens only for the main checkout: a worktree target is being tested,
+    // opens only for the main checkout (a worktree target is being tested,
     // not edited, and swapping between agent worktrees would otherwise stack
-    // up one editor window per agent-<n> folder.
-    const vsCodeNote: Promise<string | null> = target.isMain
+    // up one editor window per agent-<n> folder) and never on a swap —
+    // "Serve main" while a worktree is served just retargets the serve.
+    const vsCodeNote: Promise<string | null> = shouldLaunchVsCode(action, target.isMain)
       ? openInVsCode(target.path).then(
           () => null,
           (err: unknown) => (err instanceof Error ? err.message : String(err))
         )
       : Promise.resolve(null)
 
-    const existing = this.serves.get(game.id)
-    const action = planServeAction(existing?.targetPath ?? null, target.path)
     if (action === 'swap' && existing) {
       const oldPort = existing.port
       const detachNote = this.stop(game.id)

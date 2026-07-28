@@ -51,24 +51,16 @@ export function registerGitIpc(ctx: IpcContext): void {
       if (worktreePath && !isUnder(worktreePath, game.worktreeRoot)) {
         throw new Error('That path is not one of this game’s worktrees.')
       }
-      // Describe the PR from the run that produced it, so reviewers get the
-      // task and the verification steps instead of "chore: work in progress".
+      // Describe the PR from the run that produced it — prMessage.ts builds
+      // the title/body from the task, the branch's commits, and the test
+      // steps, so even a branch whose session is gone gets a real description.
       const session = worktreePath ? agents.findByWorktree(gameId, worktreePath) : null
-      const message = session
-        ? {
-            title: session.task.split(/\r?\n/)[0].trim().slice(0, 72) || branch,
-            body: [
-              '## Task',
-              session.task.trim(),
-              ...(session.testSteps.length > 0
-                ? ['', '## How to test in Studio', ...session.testSteps.map((s) => `- [ ] ${s}`)]
-                : []),
-              '',
-              `_Opened by Bridge from \`${branch}\`._`
-            ].join('\n')
-          }
-        : undefined
-      const url = await pushBranchForPr(game, branch, worktreePath, message)
+      const url = await pushBranchForPr(
+        game,
+        branch,
+        worktreePath,
+        session ? { task: session.task, testSteps: session.testSteps } : undefined
+      )
       void shell.openExternal(url)
       return url
     }

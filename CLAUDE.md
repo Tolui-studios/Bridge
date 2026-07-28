@@ -50,6 +50,14 @@ widen another module's bullet or a table row.
   tree's changed files for the overlap UI.
 - `gitOps.ts` — repo/GitHub lifecycle: status, pull, clone, org moves, `pushBranchForPr`,
   `autoPullDefaultBranch`, remote-key normalization.
+- `prMessage.ts` — pure PR title/body builder (task first line word-truncated to 72 chars,
+  commit list, Studio test steps, diffstat), vitest-covered. `pushBranchForPr` always sends a
+  written message — never gh's `--fill`, which titles PRs after the last commit ("chore: …
+  work in progress").
+- `autoPull.ts` — background freshness sweep (`AutoPullService`, electron-free,
+  vitest-covered): every 5 minutes ff-only pulls each registered game's default branch via
+  `autoPullDefaultBranch`. Safe because agents only commit on agent-* branches in worktrees;
+  failures are recorded, never surfaced as errors.
 - `usage.ts` — Claude usage polling (see hard rule "Usage meter").
 - `rojo.ts` — dev-loop launcher ("Open Build": VS Code + per-game `rojo serve` child process +
   Roblox Studio). ONE serve per game, retargetable: `openBuild(game, targetPath?)` serve-swaps
@@ -59,8 +67,9 @@ widen another module's bullet or a table row.
   worktree serve never adopts); self-heals a missing toolchain/`Packages/` via
   `ToolchainService.setupRepo` before serving. Launches Studio only on a fresh main-checkout
   serve (never on swap, never for worktree targets — those just note "hit Connect") and skips
-  the VS Code launch for worktree targets (editor opens for the main checkout only).
-  `taskkill /T` on Windows because the rokit shim's real rojo.exe is a grandchild.
+  the VS Code launch for worktree targets AND for swaps ("Serve main" while a worktree is
+  served just retargets the serve; the editor opens only on a fresh/reused main-checkout
+  Open Build). `taskkill /T` on Windows because the rokit shim's real rojo.exe is a grandchild.
 - `rojoTarget.ts` — electron-free target/swap logic, vitest-covered.
 - `rojoApi.ts` — electron-free /api/rojo probe; msgpack for Rojo 7.7+, JSON for older;
   vitest-covered.
@@ -123,7 +132,9 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
    the repo dir with a transcript note. Fresh launches first auto-pull the game's default branch
    (`gitOps.autoPullDefaultBranch` — fetch origin, then ff-only merge when the branch is checked
    out, ref move when it isn't) so worktrees never start from a stale base; failures downgrade to
-   a transcript warning, and resume never pulls. `settingSources: ['user', 'project']` must stay
+   a transcript warning, and resume never pulls. `AutoPullService` additionally sweeps every
+   game with the same ff-only pull every 5 minutes in the background, so the base is fresh even
+   between launches. `settingSources: ['user', 'project']` must stay
    in the query options — the SDK loads NO CLAUDE.md layers without it. Note the sample fixture
    sits inside Bridge's own repo, so Claude Code resolves Bridge as its project; real game repos
    (own `.git`) get their own workspace identity.

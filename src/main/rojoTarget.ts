@@ -51,3 +51,13 @@ export function planServeAction(currentTargetPath: string | null, requested: str
 export function shouldLaunchStudio(action: ServeAction, isMain: boolean): boolean {
   return action === 'start' && isMain
 }
+
+/**
+ * VS Code opens for main-checkout serves EXCEPT a swap — "Serve main" while a
+ * worktree is being served is a retarget of the running dev loop, and the
+ * editor (if wanted) is already open from the original Open Build. Worktree
+ * targets never open VS Code (tested, not edited).
+ */
+export function shouldLaunchVsCode(action: ServeAction, isMain: boolean): boolean {
+  return isMain && action !== 'swap'
+}
