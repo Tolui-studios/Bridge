@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { planServeAction, resolveServeTarget, samePath } from './rojoTarget'
+import { planServeAction, resolveServeTarget, samePath, shouldLaunchStudio } from './rojoTarget'
 
 const repo = path.resolve('/games/kingdom')
 const worktree = path.resolve('/games/kingdom-worktrees/agent-2')
@@ -50,5 +50,19 @@ describe('planServeAction', () => {
 describe('samePath', () => {
   it('normalizes relative segments', () => {
     expect(samePath(path.join(repo, 'x', '..'), repo)).toBe(true)
+  })
+})
+
+describe('shouldLaunchStudio', () => {
+  it('launches only for a fresh serve of the main checkout', () => {
+    expect(shouldLaunchStudio('start', true)).toBe(true)
+  })
+
+  it('never launches for worktree targets or already-running serves', () => {
+    expect(shouldLaunchStudio('start', false)).toBe(false)
+    expect(shouldLaunchStudio('swap', true)).toBe(false)
+    expect(shouldLaunchStudio('swap', false)).toBe(false)
+    expect(shouldLaunchStudio('reuse', true)).toBe(false)
+    expect(shouldLaunchStudio('reuse', false)).toBe(false)
   })
 })

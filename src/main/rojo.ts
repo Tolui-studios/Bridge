@@ -8,7 +8,13 @@ import type { Game, RojoOpenBuildResult, RojoServeStatus } from '@shared/types'
 import { openInVsCode } from './editor'
 import { rokitEnv, rokitShim } from './toolchain'
 import { portFree, probeRojoApi } from './rojoApi'
-import { planServeAction, resolveServeTarget, samePath, type ServeTarget } from './rojoTarget'
+import {
+  planServeAction,
+  resolveServeTarget,
+  samePath,
+  shouldLaunchStudio,
+  type ServeTarget
+} from './rojoTarget'
 
 const execFileAsync = promisify(execFile)
 
@@ -138,10 +144,12 @@ export class RojoService {
   /**
    * One click: VS Code + rojo serve + Roblox Studio. VS Code opens only when
    * the target is the main checkout (worktree serves are for testing, not
-   * editing); Studio launches only when no serve was already running — on a
-   * swap Studio stays open and the operator just hits Connect again. Only the
-   * serve step is fatal. Single-flight per game: a concurrent call with a
-   * different target returns the in-flight result.
+   * editing); Studio launches only on a fresh serve of the main checkout — a
+   * worktree serve never launches Studio (it gets tested from the Studio the
+   * operator already has open), and on a swap Studio stays open; both cases
+   * just say to hit Connect again. Only the serve step is fatal. Single-flight
+   * per game: a concurrent call with a different target returns the in-flight
+   * result.
    */
   async openBuild(game: Game, targetPath?: string): Promise<RojoOpenBuildResult> {
     const inFlight = this.pending.get(game.id)
@@ -184,7 +192,6 @@ export class RojoService {
       : Promise.resolve(null)
 
     const existing = this.serves.get(game.id)
-    const wasRunning = Boolean(existing)
     const action = planServeAction(existing?.targetPath ?? null, target.path)
     if (action === 'swap' && existing) {
       const oldPort = existing.port
@@ -200,10 +207,12 @@ export class RojoService {
       notes.push(`Attached to a rojo serve already running for this project on :${status.port}.`)
     }
 
-    if (!wasRunning) {
+    if (shouldLaunchStudio(action, target.isMain)) {
       const studioNote = await launchRobloxStudio()
       if (studioNote) notes.push(studioNote)
-    } else if (action === 'swap') {
+    } else if (action !== 'reuse') {
+      // Fresh worktree serve or any swap: Studio is already in the operator's
+      // hands, so just point them at Connect.
       notes.push(`Now serving ${target.label} on :${status.port} — hit Connect in Studio.`)
     }
 

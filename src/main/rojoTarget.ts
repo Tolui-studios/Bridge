@@ -40,3 +40,14 @@ export function planServeAction(currentTargetPath: string | null, requested: str
   if (currentTargetPath === null) return 'start'
   return samePath(currentTargetPath, requested) ? 'reuse' : 'swap'
 }
+
+/**
+ * Studio auto-launches only when a serve starts fresh for the MAIN checkout.
+ * A worktree serve is for testing an agent's work from the Studio session the
+ * operator already has open — launching another Studio would just stack
+ * windows — and a swap keeps the existing Studio; both get a "hit Connect"
+ * note instead.
+ */
+export function shouldLaunchStudio(action: ServeAction, isMain: boolean): boolean {
+  return action === 'start' && isMain
+}
