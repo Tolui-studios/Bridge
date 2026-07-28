@@ -18,11 +18,44 @@ Full reference with pins: `docs/ROBLOX-STACK.md` in the Bridge repo. Toolchain: 
 
 - **Bootstrap:** hand-rolled Init/Start singleton loader — **never introduce Knit or Flamework**. Server systems are ModuleScripts in `src/server/Services/`, client ones in `src/client/Controllers/`; the init scripts auto-require them, call `:Init()` on all (setup, no cross-system calls), then `:Start()` on all (wiring). Adding a system = adding a module there; never edit the init scripts for that.
 - **Data:** ProfileStore (session-locked) behind `server/Managers/DataManager` — all persistence goes through it. Replicate to clients with **Replica** (`server/Managers/ReplicaManager`), not hand-rolled remotes.
-- **Networking:** **ByteNet namespaces in `src/shared/Remotes/`**. Raw RemoteEvents/RemoteFunctions are banned.
+- **Networking:** **ByteNet namespaces in `src/shared/Remotes/`**. Raw RemoteEvents/RemoteFunctions are banned. Exact API + the join-time trap: see "ByteNet — exact API" below.
 - **State/UI:** Reflex for state; React + React-Roblox 17 (jsdotlua) under `client/UI/` — App.luau plus Components/Context/Hooks/Theme/Views; Ripple for animation; UI-Labs stories in `src/stories/`.
 - **Utilities:** Trove for lifetime cleanup (one Trove per system, `:Clean()` on teardown), Signal for events, Observers for player/tag/attribute observation, Cmdr for admin commands (`server/Commands/`).
 - Packages come from Wally (`wally.toml`) and mount at `ReplicatedStorage.Packages`. Bridge installs the toolchain and `Packages/` into your workspace before you start. If `Packages/` is missing anyway, say so instead of guessing package APIs.
 - **The toolchain is on your PATH** (via Rokit): `selene`, `stylua`, `lune`, `wally`, `rojo`. USE them for verification — `selene src` and `stylua --check src` before finishing; `lune` for running Luau scripts/tests outside Studio. You may add a Wally dependency when the task clearly needs one (prefer the standard set first; call out any addition in your final message). Still never run `rojo serve`/`build` or edit `default.project.json` — sync stays operator-owned.
+
+## ByteNet — exact API (pinned 0.4.6)
+
+Wally pin `ffrostflame/bytenet@0.4.6`; `local ByteNet = require(ReplicatedStorage.Packages.ByteNet)`. `Packages/` may be absent in your worktree — trust this reference over guessing, and never use the unreleased 0.5.0 API (`define_packet`, `ByteNet.t.*`) or the doc site's dead `ByteNet.dataTypes.*()` style.
+
+One namespace module per feature in `src/shared/Remotes/`, required by BOTH server and client — the client's `defineNamespace` yields until the server has defined the same namespace, so the server must always require it too:
+
+```lua
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ByteNet = require(ReplicatedStorage.Packages.ByteNet)
+
+return ByteNet.defineNamespace("damage", function()
+    return {
+        -- client -> server
+        requestSetEnabled = ByteNet.definePacket({ value = ByteNet.bool }),
+        requestSync = ByteNet.definePacket({ value = ByteNet.nothing }),
+        -- server -> client
+        stateChanged = ByteNet.definePacket({
+            value = ByteNet.struct({ enabled = ByteNet.bool, count = ByteNet.uint16 }),
+            reliabilityType = "reliable", -- the default; or "unreliable"
+        }),
+    }
+end)
+```
+
+- **Dot-calls only, data first, player second.** Packets are closures, not objects — `pkt:sendTo(...)` silently corrupts the payload. Server: `sendTo(data, player)`, `sendToAll(data)`, `sendToList(data, players)`, `sendToAllExcept(data, exceptPlayer)`. Client: `send(data)` — `send(nil)` for a `nothing` packet. Both: `listen(callback)` (server callback gets `(data, player: Player?)` — nil-guard it; client callback gets `(data)`) and `wait()`.
+- **Types.** Plain values, do NOT call them: `bool` `string` `buff` `inst` `unknown` `nothing` `uint8` `uint16` `uint32` `int8` `int16` `int32` `float32` `float64` `vec2` `vec3` `cframe`. Callables: `struct({...})`, `array(t)`, `optional(t)`, `map(k, v)`. Nothing else exists — no `color3` (send `struct{ r/g/b = uint8 }`), no `number` (pick a width), no `enum`, no `uint64`. In `definePacket`, only `value` (required) and `reliabilityType` (optional, default `"reliable"`) do anything.
+- Create `struct`s only INSIDE the namespace closure, and keep the closure identical on both sides — struct identity is creation order within it.
+- **No request/response.** ByteNet has no invoke/RemoteFunction equivalent — model RPC as two packets. `wait()` has no correlation; it is not a safe RPC.
+- Calling a wrong-context method (`send` on the server, `sendTo` on the client) errors as `attempt to call a nil value` — ByteNet's own guard message is broken, so recognize that cryptic form.
+- **The join-time crash (agents keep shipping this):** `bufferWriter:148: attempt to index nil with 'size'` from `sendTo` means the target player's ByteNet send buffer doesn't exist yet. ByteNet creates it only in its own `Players.PlayerAdded` connection — your own `PlayerAdded` handler can run first, and a `GetPlayers()` seed loop for already-present players definitely does. **Never push to a player at join time.** Initial state is client-pull: the client controller `send`s a `requestSync` packet from `:Start()`, the server replies inside that `listen` handler (a packet arriving from the player proves their buffer exists), and pushes deltas only to players that have completed that first sync. Seed per-player rate-limit clocks with `-math.huge`, not `0`, or the first sync request gets swallowed.
 
 ## 3D models & Studio-side work
 
