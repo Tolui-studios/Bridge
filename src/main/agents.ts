@@ -31,6 +31,7 @@ import {
   summarizeChoiceAnswers,
   summarizeChoiceQuestions
 } from './agentChoices'
+import { autoPullDefaultBranch } from './gitOps'
 import type { WorktreeLease, WorktreeService } from './worktrees'
 import type { SessionStore } from './sessionStore'
 
@@ -618,6 +619,19 @@ export class AgentService {
       if (opts.kind === 'resume') {
         cwd = opts.lease.path
       } else {
+        // Pull before the worktree is created from (or reset to) the local
+        // default branch, so no one has to remember to. Failure is a warning,
+        // not a blocker — the agent then starts from the branch as-is.
+        // Resume never pulls: it must continue exactly where it left off.
+        try {
+          this.push(record, 'system', await autoPullDefaultBranch(game))
+        } catch (err) {
+          this.push(
+            record,
+            'stderr',
+            `auto-pull failed: ${err instanceof Error ? err.message : String(err)} — starting from the local ${game.defaultBranch} as-is`
+          )
+        }
         try {
           const lease = await this.worktrees.acquire(game, record.summary.id)
           leased = true
