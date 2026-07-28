@@ -79,7 +79,10 @@ describe('scaffoldRobloxGame', () => {
 
     const gitignore = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')
     expect(gitignore).toContain('Packages/')
-    expect(gitignore).toContain('wally.lock')
+    expect(gitignore).toContain('DevPackages/')
+    // wally.lock is committed on purpose — locked resolution for every clone
+    // and worktree, and the seed-check signal for toolchain Packages reuse.
+    expect(gitignore).not.toContain('wally.lock')
   })
 
   it('never overwrites existing files', () => {
