@@ -57,5 +57,50 @@ Packages/            -> ReplicatedStorage.Packages (Wally output, gitignored)
 
 - **Bootstrap:** a hand-rolled Init/Start singleton loader — **no Knit, no Flamework**. The init scripts require every ModuleScript in `Services/` (server) / `Controllers/` (client), call `:Init()` on all (setup, no cross-talk), then `:Start()` on all (wiring). Adding a system = dropping a module in the folder.
 - **Data:** ProfileStore behind `server/Managers/DataManager`; replicated to clients with Replica via `server/Managers/ReplicaManager`.
-- **Networking:** ByteNet namespaces defined in `src/shared/Remotes/` — raw RemoteEvents/Functions are banned.
+- **Networking:** ByteNet namespaces defined in `src/shared/Remotes/` — raw RemoteEvents/Functions are banned. Full API reference below.
 - **State/UI:** Reflex stores; React 17 (jsdotlua) mounted from a UI controller; stories for UI-Labs live in `src/stories/`.
+
+## Networking (ByteNet 0.4.6)
+
+Everything below is verified against the installed `Packages/_Index/ffrostflame_bytenet@0.4.6` source. Trust it over the official docs site, which is stale: the homepage's `ByteNet.dataTypes.vec3()` style was removed long ago, the `defineNamespace` API page is empty, and the `sendToAllExcept` example is missing its argument. The wally scope is `ffrostflame` (the author later renamed to `ffrostfall` on GitHub — same library). Do NOT target `master`/0.5.0 (`define_packet`, `ByteNet.t.*`): unreleased, not on wally, different API.
+
+### Defining packets
+
+One namespace module per feature in `src/shared/Remotes/`, returned from `ByteNet.defineNamespace(name, closure)` where the closure returns a dict of `ByteNet.definePacket` results. The same module must be required by BOTH sides: packet IDs come from a server-side counter replicated to clients, and the client's `defineNamespace` yields until the server has defined that namespace — if the server never requires the module, the client hangs forever.
+
+`definePacket` props: `value` (required — the packet's data type; use `ByteNet.nothing` for empty packets) and `reliabilityType` (`"reliable"` — the default — or `"unreliable"`). The `callbackBehavior` field in the exported type is never read by 0.4.6 — dead, don't use it.
+
+### Data types
+
+| Kind | Types |
+|---|---|
+| Plain values (do NOT call) | `bool` `string` `buff` `inst` `unknown` `nothing` `uint8` `uint16` `uint32` `int8` `int16` `int32` `float32` `float64` `vec2` `vec3` `cframe` |
+| Callables | `struct({...})` `array(t)` `optional(t)` `map(k, v)` |
+
+That table is exhaustive. `color3` is NOT exported in 0.4.6 (the source file exists but `init.luau` never requires it) — send `struct{ r/g/b = uint8 }`. No `number` (pick an int/float width), no `enum`, no `uint64`.
+
+- `struct`s must be created inside the namespace closure, and the closure must stay identical on server and client — struct identity is creation order within it.
+- `array`/`map` use a uint16 length prefix: hard cap 65,536 entries; mixed tables are undefined behavior.
+- Specials (`struct`/`array`/`optional`/`map`) cost 1–2 bytes each plus parse/memory overhead — fine normally, avoid in ultra-hot paths.
+- Unreliable packets ride `UnreliableRemoteEvent`: ~900-byte payload limit, drops and reordering expected.
+
+### Sending and receiving
+
+Packets are closures, not objects: **always dot-call** — `pkt:sendTo(...)` passes the packet table as `data` and silently corrupts the payload. Where a player is a parameter it is always SECOND, data first (an intentional ByteNet design choice).
+
+| Side | Calls |
+|---|---|
+| server | `pkt.sendTo(data, player)` · `pkt.sendToAll(data)` · `pkt.sendToList(data, players)` · `pkt.sendToAllExcept(data, exceptPlayer)` |
+| client | `pkt.send(data)` — `send(nil)` for a `nothing` packet |
+| both | `pkt.listen(cb)` — server cb `(data, player: Player?)` (nil-guard it), client cb `(data)` · `pkt.wait()` (yields for next receipt) · `pkt.getListeners()` (undocumented) |
+
+- Wrong-context calls (`send` on the server, `sendTo` on the client) error as `attempt to call a nil value` — ByteNet's intended "You cannot use sendTo… on the client" guard has a broken `__index` signature and never fires. Recognize the cryptic form.
+- **No request/response.** There is no invoke/RemoteFunction equivalent. Model RPC as two packets (request + response, with your own correlation id if concurrent); `pkt.wait()` has no correlation and is not a safe RPC.
+
+### The join-time crash (the recurring agent bug)
+
+`bufferWriter:148: attempt to index nil with 'size'` from a server `sendTo` means the target player's per-player send buffer doesn't exist yet. ByteNet creates it only inside its own `Players.PlayerAdded` connection (wired at require time — no lazy-create, no nil-guard). Your own `PlayerAdded` handler can fire before ByteNet's, and a `GetPlayers()` seed loop for already-present players definitely beats it.
+
+1. **Never `sendTo`/`sendToList` a player from join-time code** — not from your `PlayerAdded` handler, not from a seed loop over existing players.
+2. **Initial state is client-pull:** the client controller `send`s a `requestSync` packet from `:Start()`; the server replies inside that `listen` handler — a packet arriving FROM the player proves their buffer exists. Push deltas only to players that have completed that first sync (track a per-player `synced` flag).
+3. Seed per-player rate-limit clocks with `-math.huge`, not `0` — an `os.clock()`-based limiter seeded at `0` swallows the player's very first sync request.
