@@ -202,6 +202,52 @@ describe('WorktreeService', () => {
     expect(fs.existsSync(path.join(second.path, 'recycle-marker.luau'))).toBe(true)
   })
 
+  it('acquireAt re-leases a specific dirty worktree without resetting it', async () => {
+    const service = new WorktreeService('resume')
+    const game = makeGame({ id: 'resume', worktreeRoot: path.join(root, 'resume-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    fs.writeFileSync(path.join(first.path, 'half-done.luau'), '-- mid-task state\n')
+    service.release('session-a')
+
+    const lease = await service.acquireAt(game, 'session-a', first.path)
+    expect(path.resolve(lease.path)).toBe(path.resolve(first.path))
+    // The leftover state is the point — no reset --hard.
+    expect(fs.readFileSync(path.join(lease.path, 'half-done.luau'), 'utf8')).toBe(
+      '-- mid-task state\n'
+    )
+    // The lease is exclusive: the pool skips it and a second acquireAt throws.
+    const other = await service.acquire(game, 'session-b')
+    expect(path.resolve(other.path)).not.toBe(path.resolve(first.path))
+    await expect(service.acquireAt(game, 'session-c', first.path)).rejects.toThrow(/busy/)
+
+    // Released, it can be re-leased again.
+    service.release('session-a')
+    const again = await service.acquireAt(game, 'session-a2', first.path)
+    expect(path.resolve(again.path)).toBe(path.resolve(first.path))
+  })
+
+  it('acquireAt rejects missing dirs and paths outside the worktree root', async () => {
+    const service = new WorktreeService('resume2')
+    const game = makeGame({ id: 'resume2', worktreeRoot: path.join(root, 'resume2-worktrees') })
+    await expect(
+      service.acquireAt(game, 's1', path.join(game.worktreeRoot, 'agent-9'))
+    ).rejects.toThrow(/no longer exists/)
+    await expect(service.acquireAt(game, 's1', path.join(root, 'elsewhere'))).rejects.toThrow(
+      /not one of this game/
+    )
+  })
+
+  it('acquireAt passes through the repo dir itself without an exclusive lease', async () => {
+    const service = new WorktreeService('resume3')
+    const game = makeGame({ id: 'resume3', worktreeRoot: path.join(root, 'resume3-worktrees') })
+    const lease = await service.acquireAt(game, 's1', game.repoPath)
+    expect(lease.path).toBe(game.repoPath)
+    expect(lease.note).toContain('game folder')
+    // Not marked in-use — same semantics as the original repo-dir fallback.
+    const again = await service.acquireAt(game, 's2', game.repoPath)
+    expect(again.path).toBe(game.repoPath)
+  })
+
   it('skips a slot whose leftover branch still holds unmerged commits', async () => {
     const service = new WorktreeService('keepwork')
     const game = makeGame({ id: 'keepwork', worktreeRoot: path.join(root, 'keepwork-worktrees') })

@@ -3,7 +3,8 @@ import type {
   AgentPermissionMode,
   AgentSessionSummary,
   AgentStreamItem,
-  Game
+  Game,
+  PendingChoiceQuestion
 } from '@shared/types'
 import TestChecklist from './TestChecklist'
 import { cleanIpcError } from '../lib/ipcError'
@@ -71,6 +72,8 @@ export default function AgentsSection({ game }: { game: Game }) {
     cancel,
     reprompt,
     interrupt,
+    answerChoices,
+    resume,
     error,
     clearError
   } = useAgents(game.id)
@@ -262,11 +265,26 @@ export default function AgentsSection({ game }: { game: Game }) {
               </p>
             </div>
           )}
+          {active.pendingChoices && active.status === 'running' && (
+            <ChoiceCard
+              key={`${active.id}:${active.pendingChoices.map((q) => q.question).join('|')}`}
+              questions={active.pendingChoices}
+              onAnswer={(answers) => answerChoices(active.id, answers)}
+            />
+          )}
           {activeLive && (
             <FollowUpRow
               running={active.status === 'running'}
               awaitingAnswer={active.pendingQuestion !== null}
               onSend={(text) => reprompt(active.id, text)}
+            />
+          )}
+          {!activeLive && active.claudeSessionId && (
+            <FollowUpRow
+              running={false}
+              awaitingAnswer={false}
+              resume
+              onSend={(text) => resume(active.id, text)}
             />
           )}
         </>
@@ -629,6 +647,15 @@ function SessionRow({
           {session.status}
         </span>
         <span className="shrink-0 text-[10px] text-neutral-600">{meta.join(' · ')}</span>
+        {(session.status === 'running' || session.status === 'idle') &&
+          (session.pendingQuestion !== null || session.pendingChoices !== null) && (
+            <span
+              title="The agent is waiting for your answer"
+              className="shrink-0 animate-pulse rounded border border-amber-800 px-1.5 py-0.5 text-[10px] text-amber-400"
+            >
+              Ask
+            </span>
+          )}
         {onShowTests && (
           <button
             onClick={(e) => {
@@ -701,13 +728,160 @@ function Transcript({ items, running }: { items: AgentStreamItem[]; running: boo
   )
 }
 
+/**
+ * Buttons for a pending AskUserQuestion tool call. Single question with
+ * single-select answers on click; multi-select and multi-question sets
+ * collect picks first and submit together. Every question offers an "Other…"
+ * free-text escape hatch. Errors keep the card up so the operator can retry.
+ */
+function ChoiceCard({
+  questions,
+  onAnswer
+}: {
+  questions: PendingChoiceQuestion[]
+  onAnswer: (answers: Record<string, string | string[]>) => Promise<boolean>
+}) {
+  const [picked, setPicked] = useState<Record<string, string | string[]>>({})
+  const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // One click answers everything only in the simplest case.
+  const instant = questions.length === 1 && !questions[0].multiSelect
+
+  const submit = async (answers: Record<string, string | string[]>): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    const ok = await onAnswer(answers)
+    setBusy(false)
+    if (!ok) setError('Could not send the answer — it may already be settled.')
+  }
+
+  const answered = (q: PendingChoiceQuestion): boolean => {
+    const value = picked[q.question]
+    return Array.isArray(value) ? value.length > 0 : Boolean(value?.trim())
+  }
+  const allAnswered = questions.every(answered)
+
+  const pick = (q: PendingChoiceQuestion, label: string): void => {
+    if (q.multiSelect) {
+      setPicked((prev) => {
+        const current = Array.isArray(prev[q.question]) ? (prev[q.question] as string[]) : []
+        const next = current.includes(label)
+          ? current.filter((l) => l !== label)
+          : [...current, label]
+        return { ...prev, [q.question]: next }
+      })
+      return
+    }
+    if (instant && !otherOpen[q.question]) {
+      void submit({ [q.question]: label })
+      return
+    }
+    setPicked((prev) => ({ ...prev, [q.question]: label }))
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-md border border-sky-900/70 bg-sky-950/30 px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-400">
+        The agent is asking
+      </p>
+      {questions.map((q) => {
+        const value = picked[q.question]
+        const selected = Array.isArray(value) ? value : value ? [value] : []
+        return (
+          <div key={q.question}>
+            <p className="mb-1.5 text-xs leading-relaxed text-sky-200">
+              {q.header && (
+                <span className="mr-2 rounded bg-sky-900/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-300">
+                  {q.header}
+                </span>
+              )}
+              {q.question}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {q.options.map((option) => {
+                const on = selected.includes(option.label) && !otherOpen[q.question]
+                return (
+                  <button
+                    key={option.label}
+                    disabled={busy}
+                    onClick={() => pick(q, option.label)}
+                    title={option.description ?? undefined}
+                    className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors disabled:opacity-40 ${
+                      on
+                        ? 'border-sky-500 bg-sky-600/25 text-sky-100'
+                        : 'border-sky-900 text-sky-300 hover:border-sky-600 hover:bg-sky-950/60'
+                    }`}
+                  >
+                    <span className="font-medium">{option.label}</span>
+                    {option.description && (
+                      <span className="mt-0.5 block max-w-56 text-[10px] leading-snug text-neutral-500">
+                        {option.description}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setOtherOpen((prev) => ({ ...prev, [q.question]: !prev[q.question] }))
+                  setPicked((prev) => ({ ...prev, [q.question]: q.multiSelect ? [] : '' }))
+                }}
+                className={`rounded-md border border-dashed px-2.5 py-1.5 text-xs transition-colors disabled:opacity-40 ${
+                  otherOpen[q.question]
+                    ? 'border-sky-500 text-sky-200'
+                    : 'border-sky-900 text-sky-400/70 hover:border-sky-600'
+                }`}
+              >
+                Other…
+              </button>
+            </div>
+            {otherOpen[q.question] && (
+              <input
+                autoFocus
+                disabled={busy}
+                value={typeof value === 'string' ? value : ''}
+                onChange={(e) =>
+                  setPicked((prev) => ({ ...prev, [q.question]: e.target.value }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && instant && typeof value === 'string' && value.trim()) {
+                    void submit({ [q.question]: value.trim() })
+                  }
+                }}
+                placeholder="Type your own answer…"
+                className="mt-1.5 w-full rounded-md border border-sky-800 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-sky-500"
+              />
+            )}
+          </div>
+        )
+      })}
+      {(!instant || Object.values(otherOpen).some(Boolean)) && (
+        <button
+          disabled={busy || !allAnswered}
+          onClick={() => void submit(picked)}
+          className="rounded-md bg-sky-600 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-40"
+        >
+          {busy ? 'Answering…' : 'Answer'}
+        </button>
+      )}
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
+    </div>
+  )
+}
+
 function FollowUpRow({
   running,
   awaitingAnswer,
+  resume = false,
   onSend
 }: {
   running: boolean
   awaitingAnswer: boolean
+  /** Finished-session variant: the text resumes the session with old context. */
+  resume?: boolean
   onSend: (text: string) => Promise<boolean>
 }) {
   const [text, setText] = useState('')
@@ -743,9 +917,16 @@ function FollowUpRow({
         placeholder={
           awaitingAnswer
             ? 'Answer the agent…'
-            : running
-              ? 'Send a follow-up (queued until this turn ends)…'
-              : 'Send a follow-up prompt…'
+            : resume
+              ? 'Resume this session — what should it do next?'
+              : running
+                ? 'Send a follow-up (queued until this turn ends)…'
+                : 'Send a follow-up prompt…'
+        }
+        title={
+          resume
+            ? 'Reopens this session with its full conversation context, in the same workspace'
+            : undefined
         }
         className={`min-w-0 flex-1 rounded-md border bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 ${
           awaitingAnswer ? 'border-sky-700 focus:border-sky-500' : 'border-neutral-800 focus:border-emerald-600'
@@ -758,7 +939,7 @@ function FollowUpRow({
           awaitingAnswer ? 'bg-sky-600 hover:bg-sky-500' : 'bg-emerald-600 hover:bg-emerald-500'
         }`}
       >
-        {awaitingAnswer ? 'Answer' : 'Send'}
+        {awaitingAnswer ? 'Answer' : resume ? (busy ? 'Resuming…' : 'Resume') : 'Send'}
       </button>
     </div>
   )

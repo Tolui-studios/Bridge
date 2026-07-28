@@ -97,6 +97,25 @@ export interface AgentLaunchConfig {
 /** 'idle' = the session is alive and waiting for a follow-up prompt. */
 export type AgentStatus = 'running' | 'idle' | 'done' | 'error' | 'cancelled'
 
+export interface PendingChoiceOption {
+  label: string
+  description: string | null
+}
+
+/**
+ * One question from the agent's AskUserQuestion tool call, waiting for the
+ * operator to pick an option (or type a free-text answer). `question` is the
+ * exact text the answers map must be keyed by.
+ */
+export interface PendingChoiceQuestion {
+  question: string
+  /** Short chip label; '' when the agent sent none. */
+  header: string
+  multiSelect: boolean
+  /** 2–4 options after validation. */
+  options: PendingChoiceOption[]
+}
+
 export interface AgentSessionSummary {
   id: string
   gameId: string
@@ -123,6 +142,17 @@ export interface AgentSessionSummary {
    * soon as the operator replies — the reply is the agent's next message.
    */
   pendingQuestion: string | null
+  /**
+   * Multiple-choice questions from a pending AskUserQuestion tool call. The
+   * turn is blocked until the operator answers (or the turn is interrupted).
+   */
+  pendingChoices: PendingChoiceQuestion[] | null
+  /**
+   * The SDK's session id (from the init message). Lets a finished session be
+   * resumed with its full conversation context; null on sessions from before
+   * resume support shipped.
+   */
+  claudeSessionId: string | null
 }
 
 export type AgentStreamKind =
@@ -418,6 +448,10 @@ export interface BridgeApi {
   /** Drop a session's test steps once they've all been verified. */
   clearAgentTestSteps(sessionId: string): Promise<void>
   interruptAgent(sessionId: string): Promise<void>
+  /** Answer a pending AskUserQuestion; keys are the exact question text. */
+  answerAgentChoices(sessionId: string, answers: Record<string, string | string[]>): Promise<void>
+  /** Reopen a finished session with its old context; `text` is its next message. */
+  resumeAgent(sessionId: string, text: string): Promise<AgentSessionSummary>
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
   getUsage(): Promise<UsageSnapshot>
