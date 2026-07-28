@@ -469,6 +469,8 @@ export interface AgentsApi {
   setAgentMode(sessionId: string, mode: AgentPermissionMode): Promise<void>
   /** Change a live session's model without restarting it ('' = default). */
   setAgentModel(sessionId: string, model: string): Promise<void>
+  /** Replace a live session's tool allowlist; applies from its next tool call. */
+  setAgentTools(sessionId: string, tools: string[]): Promise<void>
   /** Drop a session's test steps once they've all been verified. */
   clearAgentTestSteps(sessionId: string): Promise<void>
   interruptAgent(sessionId: string): Promise<void>

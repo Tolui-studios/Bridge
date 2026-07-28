@@ -55,6 +55,8 @@ const agentsApi: T.AgentsApi = {
     ipcRenderer.invoke(IPC.AgentsSetMode, sessionId, mode),
   setAgentModel: (sessionId: string, model: string) =>
     ipcRenderer.invoke(IPC.AgentsSetModel, sessionId, model),
+  setAgentTools: (sessionId: string, tools: string[]) =>
+    ipcRenderer.invoke(IPC.AgentsSetTools, sessionId, tools),
   clearAgentTestSteps: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsClearTests, sessionId),
   interruptAgent: (sessionId: string) => ipcRenderer.invoke(IPC.AgentsInterrupt, sessionId),
   answerAgentChoices: (sessionId: string, answers: Record<string, string | string[]>) =>

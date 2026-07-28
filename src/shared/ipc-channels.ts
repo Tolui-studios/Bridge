@@ -35,6 +35,7 @@ const AGENTS = {
   AgentsInterrupt: 'bridge:agents:interrupt',
   AgentsSetMode: 'bridge:agents:set-mode',
   AgentsSetModel: 'bridge:agents:set-model',
+  AgentsSetTools: 'bridge:agents:set-tools',
   AgentsClearTests: 'bridge:agents:clear-tests',
   AgentsAnswer: 'bridge:agents:answer',
   AgentsResume: 'bridge:agents:resume',

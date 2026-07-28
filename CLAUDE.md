@@ -41,7 +41,10 @@ widen another module's bullet or a table row.
 - `registry.ts` — game registry JSON store.
 - `goals.ts` — GOALS.md read/parse/watch/mutate/template (`GoalsService`).
 - `agents.ts` — agent sessions via `@anthropic-ai/claude-agent-sdk`: streaming-input interactive
-  sessions (follow-ups, interrupt, idle); games run parallel sessions, one worktree each.
+  sessions (follow-ups, interrupt, idle; runtime mode/model/tool switches); games run parallel
+  sessions, one worktree each.
+- `agentTools.ts` — pure tool-allowlist helpers: sanitize + permission-rule building for the
+  runtime tool switch (see hard rule "Runtime tool allowlist"). Vitest-covered.
 - `worktrees.ts` — git worktree pool. Electron-free, vitest-covered; `agent-<n>` dirs+branches
   under `worktreeRoot`; copies gitignored `CLAUDE.local.md` in; `changesForGame` snapshots every
   tree's changed files for the overlap UI.
@@ -106,8 +109,9 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
    form defaults to Opus 5 (`claude-opus-5`, $5/$25 per MTok — half of Fable 5) rather than
    session default, because a session-default run can land on the most expensive tier (~$0.50 for
    a trivial Fable-5 turn, measured). Smoke checks: `scripts/agent-smoke.mjs` (one turn),
-   `scripts/agent-smoke-interactive.mjs` (two turns, one session, Haiku), and
-   `scripts/agent-smoke-choices.mjs` (AskUserQuestion round-trip through canUseTool, Haiku).
+   `scripts/agent-smoke-interactive.mjs` (two turns, one session, Haiku),
+   `scripts/agent-smoke-choices.mjs` (AskUserQuestion round-trip through canUseTool, Haiku), and
+   `scripts/agent-smoke-tools.mjs` (runtime allowlist add/remove via applyFlagSettings, Haiku).
 7. **Roblox layers:** studio-wide Luau/Rojo agent conventions are canonical in
    `docs/GLOBAL-CLAUDE.md` and must be installed as `~/.claude/CLAUDE.md` on every dev machine
    (agents load it via `settingSources`). New games are scaffolded Roblox-native by
@@ -176,11 +180,25 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
     `canUseTool` in `agents.ts`: validated by the pure `agentChoices.ts` (vitest-covered),
     surfaced as `pendingChoices` buttons, answered via `AgentsAnswer` with
     `{ behavior:'allow', updatedInput:{ questions: <raw echo>, answers } }`.
-    **`AskUserQuestion` must never be added to `allowedTools`** — an allow rule bypasses
-    `canUseTool` and the tool runs with no answers (`start()` filters it defensively).
+    **`AskUserQuestion` must never be added to the tool allowlist** — an allow rule bypasses
+    `canUseTool` and the tool runs with no answers (`agentTools.sanitizeToolList` strips it on
+    both the launch and runtime paths).
     `canUseTool` must never resolve `null` (SDK fails closed, tool parks forever), and every
     other tool name is denied there to preserve headless auto-deny; denied `toolUseID`s are
     remembered so `system/permission_denied` events aren't double-rendered.
+15. **Runtime tool allowlist:** a session's allowlist is enforced as permission allow-rules in
+    the SDK's DYNAMIC flag-settings layer: `Query.applyFlagSettings` right after `query()` for
+    the launch set (the initial prompt is pushed only after the rules land, so turn 1 can't race
+    them), and again — replacing the layer wholesale — in `AgentService.setTools`. It must NOT
+    ride the `allowedTools` query option (launch-frozen) or the inline `settings` option (its
+    rules persist BENEATH the dynamic layer, so a runtime removal can never win — measured).
+    This is what lets the operator add AND remove tools on a live session (`AgentsSetTools` IPC,
+    tool pills in `AgentsSection`) with no restart and no lost context; rule building is the pure
+    `agentTools.ts` (vitest-covered; MCP globs also emit the bare-server rule form). Two caveats,
+    both pre-existing semantics: the permission mode still wins where it auto-allows
+    (`acceptEdits` keeps approving edits with Edit off the list), and enabling Studio tools
+    mid-session cannot spawn the MCP server (it only starts at query start — resume
+    re-evaluates). Verified end-to-end by `scripts/agent-smoke-tools.mjs`.
 
 ## Editing conventions (parallel agents)
 

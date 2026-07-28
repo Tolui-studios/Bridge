@@ -32,6 +32,7 @@ import {
   summarizeChoiceAnswers,
   summarizeChoiceQuestions
 } from './agentChoices'
+import { sanitizeToolList, toAllowRules } from './agentTools'
 import { autoPullDefaultBranch } from './gitOps'
 import { buildParallelWorkSection } from './parallelWork'
 import type { ParallelWorkEntry } from './parallelWork'
@@ -156,6 +157,8 @@ interface SessionRecord {
   choiceRaw: Record<string, unknown> | null
   /** Tool calls our canUseTool already rendered a 'denied' line for. */
   deniedToolUseIds: Set<string>
+  /** Whether this run spawned the Studio MCP server (fixed at query start). */
+  mcpLive: boolean
   /** Cost/turn totals from before a resume — SDK totals reset per process. */
   costBase: number
   turnsBase: number
@@ -237,6 +240,7 @@ export class AgentService {
         choiceResolver: null,
         choiceRaw: null,
         deniedToolUseIds: new Set(),
+        mcpLive: false,
         costBase: 0,
         turnsBase: 0,
         goalNotes: [],
@@ -256,9 +260,9 @@ export class AgentService {
         task,
         status: 'running',
         permissionMode: config.permissionMode,
-        // AskUserQuestion must stay OFF the allowlist: an allow rule would
-        // bypass canUseTool and the tool would run with no answers.
-        allowedTools: config.allowedTools.filter((t) => t !== 'AskUserQuestion'),
+        // sanitizeToolList keeps AskUserQuestion OFF the allowlist: an allow
+        // rule would bypass canUseTool and the tool would run with no answers.
+        allowedTools: sanitizeToolList(config.allowedTools),
         model: config.model ?? null,
         cwd: null,
         startedAt: Date.now(),
@@ -280,6 +284,7 @@ export class AgentService {
       choiceResolver: null,
       choiceRaw: null,
       deniedToolUseIds: new Set(),
+      mcpLive: false,
       costBase: 0,
       turnsBase: 0,
       goalNotes: [],
@@ -523,6 +528,35 @@ export class AgentService {
     this.emitStatus(record)
   }
 
+  /**
+   * Replace the tool allowlist of a LIVE session. The rules ride the SDK's
+   * flag-settings layer, which `applyFlagSettings` replaces wholesale, so
+   * additions AND removals apply from the next tool call in every permission
+   * mode — no restart, no lost context. The permission mode still wins where
+   * it auto-allows (e.g. `acceptEdits` keeps approving file edits with Edit
+   * off the list), exactly as it always has at launch.
+   */
+  async setTools(sessionId: string, tools: string[]): Promise<void> {
+    const record = this.require(sessionId)
+    if (!isLive(record.summary.status)) throw new Error('That session has already finished.')
+    const q = record.query
+    if (!q) throw new Error('Session is still starting.')
+    const next = sanitizeToolList(tools)
+    await q.applyFlagSettings({ permissions: { allow: toAllowRules(next) } })
+    record.summary.allowedTools = next
+    this.push(record, 'system', `tools → ${next.length > 0 ? next.join(', ') : 'none'}`)
+    // Allowing MCP tools can't conjure the server — it only spawns at query
+    // start. Resume re-evaluates the allowlist, so the fix is cheap.
+    if (wantsRobloxMcp(next) && !record.mcpLive) {
+      this.push(
+        record,
+        'system',
+        'Studio tools are now allowed, but the Studio MCP server only starts at launch — end this session and resume it to actually get them.'
+      )
+    }
+    this.emitStatus(record)
+  }
+
   /** End the session: gently when idle, hard-abort when a turn is running. */
   cancel(sessionId: string): void {
     const record = this.require(sessionId)
@@ -685,10 +719,11 @@ export class AgentService {
         )
       }
 
+      let initialText: string
       if (opts.kind === 'resume') {
         // No footer/vault re-send: the protocol and context are already part
         // of the resumed conversation.
-        input.push(userMessage(opts.text, null))
+        initialText = opts.text
       } else {
         const footer = this.hooks.taskFooter?.(game.id) ?? ''
         const parallel = await this.buildParallelContext(record, game)
@@ -702,14 +737,14 @@ export class AgentService {
             this.push(record, 'stderr', `vault notes failed: ${err instanceof Error ? err.message : String(err)}`)
           }
         }
-        input.push(userMessage(opts.task + footer + parallel + vaultBlock, null))
+        initialText = opts.task + footer + parallel + vaultBlock
       }
+      record.mcpLive = wantsRobloxMcp(record.summary.allowedTools)
       const stream = query({
         prompt: input,
         options: {
           cwd,
           permissionMode: record.summary.permissionMode,
-          allowedTools: record.summary.allowedTools,
           ...(record.summary.model ? { model: record.summary.model } : {}),
           ...(opts.kind === 'resume' ? { resume: opts.resumeId } : {}),
           // Multiple-choice questions (AskUserQuestion) surface in the UI;
@@ -739,6 +774,17 @@ export class AgentService {
         }
       })
       record.query = stream
+      // The allowlist lives in the dynamic flag-settings layer — the same
+      // store setTools later replaces. It must NOT ride the `allowedTools`
+      // option (launch-frozen) or the inline `settings` option (its rules
+      // persist beneath the dynamic layer, so a runtime removal could never
+      // win — measured; scripts/agent-smoke-tools.mjs guards this). The
+      // initial prompt is pushed only after the rules land, so the first
+      // turn cannot race them.
+      await stream.applyFlagSettings({
+        permissions: { allow: toAllowRules(record.summary.allowedTools) }
+      })
+      input.push(userMessage(initialText, null))
       for (;;) {
         const next = await stream.next()
         if (next.done) break
