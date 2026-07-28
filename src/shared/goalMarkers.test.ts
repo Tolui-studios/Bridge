@@ -25,6 +25,19 @@ describe('parseBridgeMarkers', () => {
     ])
   })
 
+  it('parses CLAIM markers case-insensitively alongside other kinds', () => {
+    const text = [
+      'BRIDGE:CLAIM src/shared/Config.luau, CLAUDE.md',
+      'bridge:claim src/other.luau',
+      'BRIDGE:DONE Terrain blockout'
+    ].join('\n')
+    expect(parseBridgeMarkers(text)).toEqual([
+      { kind: 'claim', text: 'src/shared/Config.luau, CLAUDE.md' },
+      { kind: 'claim', text: 'src/other.luau' },
+      { kind: 'done', text: 'Terrain blockout' }
+    ])
+  })
+
   it('ignores inline mentions that are not line-anchored markers', () => {
     expect(parseBridgeMarkers('I will use BRIDGE:DONE x later in this sentence')).toEqual([
       // line-anchored with leading text before BRIDGE: is not a marker

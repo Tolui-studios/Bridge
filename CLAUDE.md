@@ -182,6 +182,26 @@ Registry lives at `%APPDATA%\Bridge\registry.json` (`app.getPath('userData')`), 
     other tool name is denied there to preserve headless auto-deny; denied `toolUseID`s are
     remembered so `system/permission_denied` events aren't double-rendered.
 
+## Editing conventions (parallel agents)
+
+Multiple agents work in this repo at once, each in its own worktree, merged as separate PRs.
+Shape your edits so disjoint work stays on disjoint lines:
+
+- Add new IPC surface into the matching domain block in all four files (rule 2) — never append
+  at the end of a list, interface, or object literal.
+- One module per concern in `src/main/`; document it as its own bullet under "Main process
+  modules", never by widening another bullet or a table row.
+- In this file, keep lines wrapped at ~100 cols and touch only the bullets/rules your change is
+  actually about.
+- Prefer adding a new file or a self-contained section over editing shared lines in hot files.
+- Declare conflict-prone shared files you intend to edit with `BRIDGE:CLAIM <paths>` (comma
+  separated, repo-relative) as soon as you know them; claims expire with your session and show
+  up in other agents' launch context and the worktree panel.
+- Before finishing, `git fetch origin && git merge origin/<default branch>` in your worktree and
+  resolve any conflicts yourself, then re-run typecheck + tests.
+- Operator practice: merge agent PRs one at a time — fresh launches auto-pull the default
+  branch, so the next agent branches from the merged result.
+
 ## Version pins — do not casually upgrade
 
 - `vite` stays **7.x** and `@vitejs/plugin-react` stays **5.x**: electron-vite 5 supports vite

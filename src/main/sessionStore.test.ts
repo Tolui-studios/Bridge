@@ -24,7 +24,8 @@ const summary = (id: string, gameId = 'game-a'): AgentSessionSummary => ({
   testSteps: [],
   pendingQuestion: null,
   pendingChoices: null,
-  claudeSessionId: null
+  claudeSessionId: null,
+  claims: []
 })
 
 const item = (sessionId: string, text: string): AgentStreamItem => ({

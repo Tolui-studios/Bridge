@@ -153,6 +153,12 @@ export interface AgentSessionSummary {
    * resume support shipped.
    */
   claudeSessionId: string | null
+  /**
+   * Repo-relative files this session declared it will edit (`BRIDGE:CLAIM`).
+   * Soft merge-conflict coordination: surfaced to other launches' footers and
+   * the worktree overlap panel — never a hard lock. Claims die with the session.
+   */
+  claims: string[]
 }
 
 export type AgentStreamKind =
