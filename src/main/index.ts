@@ -15,6 +15,8 @@ import { TeamSync } from './teamSync'
 import { ToolchainService } from './toolchain'
 import { McpInstaller } from './mcpInstall'
 import { RojoService } from './rojo'
+import { AutoPullService } from './autoPull'
+import { autoPullDefaultBranch } from './gitOps'
 import { UpdaterService } from './updater'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
 import { applyAgentNote } from './claudeNotes'
@@ -62,6 +64,7 @@ if (!gotLock) {
   let agents: AgentService | null = null
   let usage: UsageService | null = null
   let rojo: RojoService | null = null
+  let autoPull: AutoPullService | null = null
 
   void app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.toluistudios.bridge')
@@ -120,6 +123,16 @@ if (!gotLock) {
     usage.start()
     void team.restore()
 
+    // Agents only ever work on agent-* branches in worktrees, so the local
+    // default branch of every game is safe to fast-forward frequently —
+    // keeping the base that worktrees (and "Serve main") start from current.
+    autoPull = new AutoPullService({
+      listGames: () => registry.list(),
+      pull: (game) => autoPullDefaultBranch(game),
+      log: (line) => console.log(line)
+    })
+    autoPull.start()
+
     createWindow()
     // After the window exists, so the first state event has somewhere to land.
     updater.start()
@@ -139,6 +152,7 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     usage?.stop()
+    autoPull?.stop()
     agents?.closeAll()
     rojo?.stopAllSync()
     void goals?.closeAll()

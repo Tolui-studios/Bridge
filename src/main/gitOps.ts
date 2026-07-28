@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
 import type { Game, GitRepoStatus } from '@shared/types'
+import { buildPrMessage, titleFromTask, type PrMessage } from './prMessage'
 
 const execFileAsync = promisify(execFile)
 
@@ -532,16 +533,10 @@ export async function pull(game: Game): Promise<string> {
   }
 }
 
-/**
- * Take an agent's worktree from "has changes" to "PR is open", in one press:
- * commit anything pending, push the branch, then create the PR with `gh`.
- *
- * Returns the PR URL. If `gh` is unavailable or unauthenticated it falls back
- * to GitHub's compare page, which is the old behaviour — degraded, not broken.
- */
-export interface PrMessage {
-  title: string
-  body: string
+/** What the caller knows about the run behind a PR — see pushBranchForPr. */
+export interface PrDescribe {
+  task: string | null
+  testSteps: string[]
 }
 
 /** Push rejection that means "remote history diverged" — not auth/network. */
@@ -549,11 +544,22 @@ export function isNonFastForward(stderr: string): boolean {
   return /non-fast-forward|fetch first|\[rejected\]|stale info/i.test(stderr)
 }
 
+/**
+ * Take an agent's worktree from "has changes" to "PR is open", in one press:
+ * commit anything pending, push the branch, then create the PR with `gh`.
+ * The PR message is always written (see prMessage.ts) from the session's
+ * task and test steps (`describe`, when the caller knows the run) plus the
+ * branch's commits — so title and body describe the work even for a branch
+ * whose session is long gone.
+ *
+ * Returns the PR URL. If `gh` is unavailable or unauthenticated it falls back
+ * to GitHub's compare page, which is the old behaviour — degraded, not broken.
+ */
 export async function pushBranchForPr(
   game: Game,
   branch: string,
   worktreePath?: string,
-  message?: PrMessage
+  describe?: PrDescribe
 ): Promise<string> {
   const remote = await remoteUrl(game.repoPath)
   const webUrl = toWebUrl(remote)
@@ -565,7 +571,10 @@ export async function pushBranchForPr(
     try {
       const { stdout } = await git(worktreePath, ['status', '--porcelain'])
       if (stdout.trim() !== '') {
-        await commitAll(worktreePath, `chore: ${branch} work in progress`)
+        // Subject from the task when known — the log should say what the
+        // work was, not "work in progress".
+        const subject = titleFromTask(describe?.task)
+        await commitAll(worktreePath, `chore: ${subject ?? `${branch} work in progress`}`)
       }
     } catch (err) {
       const anyErr = err as { stderr?: string; message?: string }
@@ -614,8 +623,52 @@ export async function pushBranchForPr(
     }
   }
 
+  const message = await describePr(game, branch, describe)
   const compareUrl = `${webUrl}/compare/${encodeURIComponent(game.defaultBranch)}...${encodeURIComponent(branch)}?expand=1`
   return (await openPrWithGh(game, branch, message)) ?? compareUrl
+}
+
+/** Gather the branch's commits and diffstat, then build the PR message. */
+async function describePr(
+  game: Game,
+  branch: string,
+  describe?: PrDescribe
+): Promise<PrMessage> {
+  let commits: string[] = []
+  try {
+    const { stdout } = await git(game.repoPath, [
+      'log',
+      '--pretty=%s',
+      '--no-merges',
+      '-n',
+      '30',
+      `${game.defaultBranch}..${branch}`
+    ])
+    commits = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  } catch {
+    // Unknown base or branch — the body just goes without a commit list.
+  }
+  let diffstat: string | null = null
+  try {
+    const { stdout } = await git(game.repoPath, [
+      'diff',
+      '--shortstat',
+      `${game.defaultBranch}...${branch}`
+    ])
+    diffstat = stdout.trim() || null
+  } catch {
+    // Same — cosmetic.
+  }
+  return buildPrMessage({
+    branch,
+    task: describe?.task ?? null,
+    testSteps: describe?.testSteps ?? [],
+    commits,
+    diffstat
+  })
 }
 
 /**
@@ -624,27 +677,34 @@ export async function pushBranchForPr(
  *
  * The compare page is only a pre-filled form: it still has to be submitted by
  * hand, and a second click just opens the same form again. `gh` creates the
- * real PR, titles it from the commits (`--fill`), and can hand back the URL of
- * an existing PR instead of erroring on the second press.
+ * real PR with the written title/body (never `--fill` — that would title it
+ * after whatever commit is last), and can hand back the URL of an existing PR
+ * instead of erroring on the second press.
  *
  * Run from the repo directory so gh resolves owner/repo from origin itself.
  */
 async function openPrWithGh(
   game: Game,
   branch: string,
-  message?: PrMessage
+  message: PrMessage
 ): Promise<string | null> {
   const gh = ghExecutable()
   const opts = { cwd: game.repoPath, windowsHide: true }
-  // A written title/body beats --fill, which would otherwise title the PR
-  // after a generated commit message like "chore: <branch> work in progress".
-  const describe = message
-    ? ['--title', message.title, '--body', message.body]
-    : ['--fill']
   try {
     const { stdout } = await execFileAsync(
       gh,
-      ['pr', 'create', '--head', branch, '--base', game.defaultBranch, ...describe],
+      [
+        'pr',
+        'create',
+        '--head',
+        branch,
+        '--base',
+        game.defaultBranch,
+        '--title',
+        message.title,
+        '--body',
+        message.body
+      ],
       opts
     )
     const url = /https:\/\/\S+/.exec(stdout)?.[0]

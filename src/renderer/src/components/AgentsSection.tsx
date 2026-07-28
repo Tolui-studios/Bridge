@@ -315,10 +315,11 @@ function basename(p: string): string {
 }
 
 /**
- * Test / VS Code / PR actions for a session working in its own worktree — the
- * whole verify loop without hunting for the row in RepoBar's worktree list.
- * Test swaps the game's single rojo serve to this worktree (port 34872 stays
- * the one the Studio plugin auto-connects to).
+ * Rojo serve / VS Code / PR actions for a session working in its own worktree
+ * — the whole verify loop without hunting for the row in RepoBar's worktree
+ * list. Rojo serve swaps the game's single serve to this worktree (port 34872
+ * stays the one the Studio plugin auto-connects to); it never opens VS Code
+ * or Studio.
  */
 function WorkspaceActions({ game, session }: { game: Game; session: AgentSessionSummary }) {
   const rojo = useRojo(game.id)
@@ -360,10 +361,10 @@ function WorkspaceActions({ game, session }: { game: Game; session: AgentSession
           })
         }
         disabled={busy !== null || serving}
-        title="Swap rojo serve to this session's worktree to test its work in Studio"
+        title="Point the game's rojo serve at this session's worktree — then hit Connect in Studio (opens nothing else)"
         className={`${buttonClass} hover:text-emerald-300`}
       >
-        {busy === 'test' ? 'Serving…' : serving ? `Serving :${rojo?.port}` : 'Test in Studio'}
+        {busy === 'test' ? 'Serving…' : serving ? `Serving :${rojo?.port}` : 'Rojo serve'}
       </button>
       <button
         onClick={() => act('code', () => window.bridge.openInEditor(game.id, cwd))}
