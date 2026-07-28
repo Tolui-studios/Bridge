@@ -80,29 +80,36 @@ export class WorktreeService {
     // swept into a commit.
     ensureGeneratedIgnored(game.repoPath)
 
-    await this.git(game.repoPath, ['worktree', 'prune'])
-    const existing = await this.list(game.repoPath)
+    // Prune costs a git spawn and the common launch has nothing to prune —
+    // only pay for it when a registered worktree has vanished from disk.
+    let existing = await this.list(game.repoPath)
+    if (existing.some((w) => isUnder(w.path, game.worktreeRoot) && !fs.existsSync(w.path))) {
+      await this.git(game.repoPath, ['worktree', 'prune'])
+      existing = await this.list(game.repoPath)
+    }
     const underRoot = existing.filter((w) => isUnder(w.path, game.worktreeRoot))
 
     // Only a PRISTINE worktree may be reused. A worktree that still holds the
     // previous agent's uncommitted changes or unmerged commits is left alone
     // and a fresh slot is allocated instead — otherwise the next agent starts
     // on top of work it never did, and that work is at risk of being lost.
-    let free: WorktreeInfo | null = null
-    for (const candidate of underRoot) {
-      if (this.inUse.has(normalize(candidate.path))) continue
-      if (!fs.existsSync(candidate.path)) continue
-      if (!(await this.isPristine(candidate.path, game.defaultBranch))) continue
-      free = candidate
-      break
-    }
-    if (free) {
-      // Safe: pristine means nothing to lose, and it stops the agent from
-      // starting on a base branch that has moved on since this was created.
-      try {
-        await this.git(free.path, ['reset', '--hard', game.defaultBranch])
-      } catch {
-        // Non-fatal: worst case the agent starts from a slightly older base.
+    const candidates = underRoot.filter(
+      (w) => !this.inUse.has(normalize(w.path)) && fs.existsSync(w.path)
+    )
+    const states = await Promise.all(
+      candidates.map((c) => this.reuseState(c.path, game.defaultBranch))
+    )
+    const index = states.findIndex((state) => state !== 'not-reusable')
+    if (index >= 0) {
+      const free = candidates[index]
+      if (states[index] === 'behind') {
+        // Safe: pristine means nothing to lose, and it stops the agent from
+        // starting on a base branch that has moved on since this was created.
+        try {
+          await this.git(free.path, ['reset', '--hard', game.defaultBranch])
+        } catch {
+          // Non-fatal: worst case the agent starts from a slightly older base.
+        }
       }
       this.inUse.set(normalize(free.path), sessionId)
       this.propagateLocalClaudeMd(game.repoPath, free.path)
@@ -140,18 +147,34 @@ export class WorktreeService {
   }
 
   /**
-   * True only when this worktree carries no work of its own: a clean tree
-   * (ignored files like `Packages/` don't count) and no commits ahead of the
-   * base branch. Anything unknown counts as NOT pristine, so an unreadable
-   * worktree is never handed to a new agent.
+   * Reusability of a worktree, cheapest checks first and in parallel:
+   * - `current`: clean tree, HEAD already equals the base tip — reusable
+   *   as-is, no reset needed.
+   * - `behind`: clean tree but on an older base commit — reusable after a
+   *   `reset --hard` catches it up.
+   * - `not-reusable`: dirty, ahead of base (unmerged agent commits), or
+   *   unreadable — never handed to a new agent, its work is at risk.
    */
-  private async isPristine(worktreePath: string, defaultBranch: string): Promise<boolean> {
+  private async reuseState(
+    worktreePath: string,
+    defaultBranch: string
+  ): Promise<'current' | 'behind' | 'not-reusable'> {
     try {
+      const headsPromise = this.git(worktreePath, ['rev-parse', 'HEAD', defaultBranch]).catch(
+        () => null
+      )
       const { stdout: dirty } = await this.git(worktreePath, ['status', '--porcelain'])
-      if (dirty.trim() !== '') return false
+      if (dirty.trim() !== '') return 'not-reusable'
+      const heads = await headsPromise
+      if (heads) {
+        const lines = heads.stdout.trim().split(/\r?\n/)
+        if (lines.length >= 2 && lines[0] === lines[1]) return 'current'
+      }
       return (await this.aheadOfBase(worktreePath, defaultBranch)) === 0
+        ? 'behind'
+        : 'not-reusable'
     } catch {
-      return false
+      return 'not-reusable'
     }
   }
 

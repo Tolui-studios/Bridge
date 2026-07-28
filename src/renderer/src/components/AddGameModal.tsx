@@ -1,7 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AddGameInput, Game, GameMutationResult } from '@shared/types'
+import type { AddGameInput, Game, GameCreateProgress, GameMutationResult } from '@shared/types'
 import { cleanIpcError } from '../lib/ipcError'
+
+/** Fixed display order for the create-flow checklist. */
+const CREATE_STEPS: { key: GameCreateProgress['step']; label: string }[] = [
+  { key: 'scaffold', label: 'Folder, git repo & GOALS.md' },
+  { key: 'commit', label: 'First commit' },
+  { key: 'github', label: 'GitHub org repo' },
+  { key: 'toolchain', label: 'Toolchain & packages' },
+  { key: 'lockfile', label: 'Lock dependency versions' }
+]
 
 interface Props {
   /** null = add mode; a Game = edit mode. */
@@ -26,9 +35,25 @@ export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: P
   const [error, setError] = useState<string | null>(null)
   const [savedWarnings, setSavedWarnings] = useState<string[] | null>(null)
   const [mode, setMode] = useState<'create' | 'existing'>('create')
+  const [steps, setSteps] = useState<
+    Partial<Record<GameCreateProgress['step'], GameCreateProgress>>
+  >({})
+  /** Name of the create currently in flight — filters progress events to ours. */
+  const pendingName = useRef<string | null>(null)
 
   const editing = initial !== null
   const creating = !editing && mode === 'create' && onCreate !== undefined
+
+  useEffect(() => {
+    if (editing) return
+    return window.bridge.onGameCreateProgress((p) => {
+      if (p.name !== pendingName.current) return
+      setSteps((prev) => ({ ...prev, [p.step]: p }))
+      // The invoke resolved long before the background steps — keep the
+      // warning list live; `done` carries the final cumulative set.
+      if (p.step === 'done' || p.warnings.length > 0) setSavedWarnings(p.warnings)
+    })
+  }, [editing])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -52,7 +77,12 @@ export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: P
     try {
       let result: GameMutationResult
       if (creating) {
+        pendingName.current = name.trim()
         result = await onCreate(name)
+        // Always show the saved panel: the invoke resolves fast while GitHub
+        // and the toolchain finish in the background (live checklist).
+        setSavedWarnings(result.warnings)
+        return
       } else {
         const value: AddGameInput | Game = editing
           ? { ...(initial as Game), name, repoPath, defaultBranch, worktreeRoot }
@@ -83,7 +113,41 @@ export default function AddGameModal({ initial, onClose, onSubmit, onCreate }: P
       <div className="w-full max-w-lg rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
         {savedWarnings ? (
           <>
-            <h3 className="text-lg font-semibold text-neutral-100">Game saved</h3>
+            <h3 className="text-lg font-semibold text-neutral-100">
+              {pendingName.current
+                ? steps.done
+                  ? 'Game ready'
+                  : 'Game created — finishing setup…'
+                : 'Game saved'}
+            </h3>
+            {pendingName.current && (
+              <ul className="mt-4 space-y-1.5">
+                {CREATE_STEPS.map(({ key, label }) => {
+                  const p = steps[key]
+                  // Lockfile only happens when the toolchain produced one.
+                  if (key === 'lockfile' && !p) return null
+                  const icon = !p ? '○' : p.state === 'ok' ? '✓' : p.state === 'warn' ? '⚠' : '…'
+                  const tone = !p
+                    ? 'text-neutral-600'
+                    : p.state === 'ok'
+                      ? 'text-emerald-400'
+                      : p.state === 'warn'
+                        ? 'text-amber-400'
+                        : 'text-neutral-300'
+                  return (
+                    <li key={key} className="flex items-center gap-2 text-xs">
+                      <span className={`w-4 text-center ${tone}`}>{icon}</span>
+                      <span className={p ? 'text-neutral-300' : 'text-neutral-600'}>{label}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {pendingName.current && !steps.done && (
+              <p className="mt-3 text-[11px] text-neutral-500">
+                Safe to close — setup keeps running in the background.
+              </p>
+            )}
             <ul className="mt-4 space-y-2">
               {savedWarnings.map((warning, i) => (
                 <li

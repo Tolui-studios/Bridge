@@ -115,6 +115,36 @@ describe('WorktreeService', () => {
     expect(fs.existsSync(path.join(first.path, 'feature.luau'))).toBe(true)
   })
 
+  it('resets a reused worktree that fell behind the base branch', async () => {
+    const service = new WorktreeService()
+    const game = makeGame({ id: 'behind', worktreeRoot: path.join(root, 'behind-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    service.release('session-a')
+
+    // Base advances after the worktree was created and released.
+    fs.writeFileSync(path.join(repoPath, 'NEW-FILE.md'), 'landed on main\n')
+    git('add', '-A')
+    git('commit', '-m', 'advance main')
+
+    const reused = await service.acquire(game, 'session-b')
+    // git reports forward-slash paths; compare resolved forms.
+    expect(path.resolve(reused.path)).toBe(path.resolve(first.path))
+    expect(reused.created).toBe(false)
+    expect(fs.existsSync(path.join(reused.path, 'NEW-FILE.md'))).toBe(true)
+  })
+
+  it('recovers when a worktree directory was deleted out from under git', async () => {
+    const service = new WorktreeService()
+    const game = makeGame({ id: 'deleted', worktreeRoot: path.join(root, 'deleted-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    service.release('session-a')
+    fs.rmSync(first.path, { recursive: true, force: true, maxRetries: 3 })
+
+    const next = await service.acquire(game, 'session-b')
+    expect(next.path).not.toBe('')
+    expect(fs.existsSync(path.join(next.path, 'GOALS.md'))).toBe(true)
+  })
+
   it('keeps worktrees outside the repo directory itself', async () => {
     const service = new WorktreeService()
     const lease = await service.acquire(makeGame(), 'session-d')

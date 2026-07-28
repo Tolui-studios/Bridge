@@ -18,6 +18,22 @@ export interface GameMutationResult {
   warnings: string[]
 }
 
+/**
+ * Streamed while a new game is being created. The GamesCreate invoke resolves
+ * right after the bootstrap commit; GitHub repo creation and the toolchain
+ * install continue in the background and report through these events. The
+ * `done` event carries the final cumulative warnings.
+ */
+export interface GameCreateProgress {
+  gameId: string
+  name: string
+  step: 'scaffold' | 'commit' | 'github' | 'toolchain' | 'lockfile' | 'done'
+  state: 'start' | 'ok' | 'warn'
+  message: string | null
+  /** Cumulative — the modal can always render the latest event's list. */
+  warnings: string[]
+}
+
 export interface ChecklistItem {
   text: string
   done: boolean
@@ -376,8 +392,13 @@ export interface UpdateState {
 export interface BridgeApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
-  /** Create a brand-new game: folder in the games root, git init, GOALS.md, GitHub org repo. */
+  /**
+   * Create a brand-new game: folder in the games root, git init, GOALS.md.
+   * Resolves after the bootstrap commit; the GitHub org repo and toolchain
+   * install continue in the background (watch onGameCreateProgress).
+   */
   createGame(name: string): Promise<GameMutationResult>
+  onGameCreateProgress(cb: (progress: GameCreateProgress) => void): () => void
   updateGame(game: Game): Promise<GameMutationResult>
   removeGame(id: string): Promise<void>
   /** Delete a game beyond the registry. Every target is irreversible. */

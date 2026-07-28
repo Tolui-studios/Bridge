@@ -11,7 +11,19 @@
  */
 export const ROBLOX_MCP_SERVER = 'robloxstudio'
 
-export const ROBLOX_MCP_PACKAGE = '@chrrxs/robloxstudio-mcp@latest'
+export const ROBLOX_MCP_NAME = '@chrrxs/robloxstudio-mcp'
+
+/**
+ * Pinned deliberately. `@latest` forced npx to re-resolve the dist-tag against
+ * the npm registry on EVERY agent launch (~1.3–2s measured, even warm). An
+ * exact version resolves from the local cache — and the managed install
+ * (mcpInstall.ts) skips npx on the launch path entirely. To bump: check
+ * `npm view @chrrxs/robloxstudio-mcp version`, update here, done — the
+ * managed install re-installs itself when the pin changes.
+ */
+export const ROBLOX_MCP_VERSION = '2.22.5'
+
+export const ROBLOX_MCP_PACKAGE = `${ROBLOX_MCP_NAME}@${ROBLOX_MCP_VERSION}`
 
 /**
  * Wildcard entry for the agent's `allowedTools` whitelist. The SDK names MCP

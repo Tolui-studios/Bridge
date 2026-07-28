@@ -117,9 +117,12 @@ export function scaffoldRobloxGame(dir: string, name: string, slug: string): str
   // makes every worktree permanently "dirty": `git worktree remove` refuses,
   // the uncommitted count is inflated by hundreds of files, and a commit-all
   // would sweep the whole vendored tree into the branch.
+  // wally.lock is deliberately NOT ignored: committing it pins resolved
+  // package versions for every clone and agent worktree, and toolchain.ts
+  // uses lockfile equality to validate seeding Packages/ into worktrees.
   write(
     '.gitignore',
-    ['Packages/', 'DevPackages/', 'sourcemap.json', 'wally.lock', '.env.local', ''].join('\n')
+    ['Packages/', 'DevPackages/', 'sourcemap.json', '.env.local', ''].join('\n')
   )
   write('selene.toml', "std = 'roblox'\n")
   write(

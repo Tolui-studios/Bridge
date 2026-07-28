@@ -61,13 +61,29 @@ function claudeExecutable(): string | undefined {
 
 /**
  * Studio MCP servers for this launch, or `{}` when the whitelist didn't ask
- * for them — an unused entry would still spawn an npx process per session.
+ * for them — an unused entry would still spawn a server process per session.
+ *
+ * When the Bridge-managed install is ready (mcpInstall.ts), the server runs
+ * as plain `node <entry>` — nothing npm-shaped on the launch path. Until
+ * then it falls back to npx with the pinned version.
  *
  * Windows can't spawn the `npx.cmd` shim directly (Node dropped the implicit
- * shell for `.cmd` in the CVE-2024-27980 fix), so it goes through `cmd /c`.
+ * shell for `.cmd` in the CVE-2024-27980 fix), so npx goes through `cmd /c`.
  */
-function mcpServersFor(allowedTools: readonly string[]): Record<string, McpServerConfig> {
+function mcpServersFor(
+  allowedTools: readonly string[],
+  mcpEntry: string | null
+): Record<string, McpServerConfig> {
   if (!wantsRobloxMcp(allowedTools)) return {}
+  if (mcpEntry) {
+    return {
+      [ROBLOX_MCP_SERVER]: {
+        type: 'stdio',
+        command: 'node',
+        args: [mcpEntry, '--auto-install-plugin']
+      }
+    }
+  }
   const args = ['-y', ROBLOX_MCP_PACKAGE, '--auto-install-plugin']
   return {
     [ROBLOX_MCP_SERVER]:
@@ -153,7 +169,9 @@ export interface AgentServiceHooks {
   /** Builds the prompt block for attached vault notes. */
   vaultContext?: (gameId: string, relPaths: string[]) => string
   /** Installs toolchain + packages into the workspace before launch. */
-  prepareWorkspace?: (dir: string) => Promise<string[]>
+  prepareWorkspace?: (dir: string, game: Game) => Promise<string[]>
+  /** Entry path of the Bridge-managed Roblox MCP install, when ready. */
+  robloxMcpEntry?: () => string | null
   /** Writes a run summary (vault); returns a transcript note or null. */
   onRunEnded?: (summary: AgentSessionSummary, extras: RunExtras) => string | null
 }
@@ -412,7 +430,7 @@ export class AgentService {
       if (this.hooks.prepareWorkspace) {
         this.push(record, 'system', 'preparing workspace (toolchain + packages)…')
         try {
-          for (const note of await this.hooks.prepareWorkspace(cwd)) {
+          for (const note of await this.hooks.prepareWorkspace(cwd, game)) {
             this.push(record, 'system', note)
           }
         } catch (err) {
@@ -453,7 +471,10 @@ export class AgentService {
           ...(record.summary.model ? { model: record.summary.model } : {}),
           // Studio-side work (instances, generated meshes, asset uploads) runs
           // through this; only spawned when the whitelist opted in.
-          mcpServers: mcpServersFor(record.summary.allowedTools),
+          mcpServers: mcpServersFor(
+            record.summary.allowedTools,
+            this.hooks.robloxMcpEntry?.() ?? null
+          ),
           ...(claudeExe ? { pathToClaudeCodeExecutable: claudeExe } : {}),
           // Load the memory layers: ~/.claude/CLAUDE.md (studio-wide) and the
           // workspace CLAUDE.md — the SDK loads neither by default.

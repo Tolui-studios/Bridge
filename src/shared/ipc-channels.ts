@@ -48,6 +48,7 @@ export const IPC = {
   RojoStatus: 'bridge:rojo:status',
   UpdateGet: 'bridge:update:get',
   UpdateInstall: 'bridge:update:install',
+  EvGameCreateProgress: 'bridge:event:game-create-progress',
   EvGoalsChanged: 'bridge:event:goals-changed',
   EvRegistryChanged: 'bridge:event:registry-changed',
   EvAgentEvent: 'bridge:event:agent-event',

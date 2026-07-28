@@ -136,10 +136,12 @@ export class RojoService {
   constructor(private readonly setupRepo?: (dir: string) => Promise<string[]>) {}
 
   /**
-   * One click: VS Code + rojo serve + Roblox Studio (skipped when a serve was
-   * already running — on a swap Studio stays open and the operator just hits
-   * Connect again). Only the serve step is fatal. Single-flight per game: a
-   * concurrent call with a different target returns the in-flight result.
+   * One click: VS Code + rojo serve + Roblox Studio. VS Code opens only when
+   * the target is the main checkout (worktree serves are for testing, not
+   * editing); Studio launches only when no serve was already running — on a
+   * swap Studio stays open and the operator just hits Connect again. Only the
+   * serve step is fatal. Single-flight per game: a concurrent call with a
+   * different target returns the in-flight result.
    */
   async openBuild(game: Game, targetPath?: string): Promise<RojoOpenBuildResult> {
     const inFlight = this.pending.get(game.id)
@@ -168,11 +170,18 @@ export class RojoService {
     const notes: string[] = []
     await this.selfHeal(target.path, notes)
 
-    try {
-      await openInVsCode(target.path)
-    } catch (err) {
-      notes.push(err instanceof Error ? err.message : String(err))
-    }
+    // VS Code start is slow (1-5s cold) and nothing downstream depends on it —
+    // let it race the serve pipeline and only collect its failure note at the
+    // end, so total wall time is max(vscode, serve) instead of the sum. It
+    // opens only for the main checkout: a worktree target is being tested,
+    // not edited, and swapping between agent worktrees would otherwise stack
+    // up one editor window per agent-<n> folder.
+    const vsCodeNote: Promise<string | null> = target.isMain
+      ? openInVsCode(target.path).then(
+          () => null,
+          (err: unknown) => (err instanceof Error ? err.message : String(err))
+        )
+      : Promise.resolve(null)
 
     const existing = this.serves.get(game.id)
     const wasRunning = Boolean(existing)
@@ -197,6 +206,9 @@ export class RojoService {
     } else if (action === 'swap') {
       notes.push(`Now serving ${target.label} on :${status.port} — hit Connect in Studio.`)
     }
+
+    const editorNote = await vsCodeNote
+    if (editorNote) notes.push(editorNote)
 
     return { status, notes }
   }

@@ -13,6 +13,7 @@ import { SettingsStore } from './settings'
 import { VaultService } from './vault'
 import { TeamSync } from './teamSync'
 import { ToolchainService } from './toolchain'
+import { McpInstaller } from './mcpInstall'
 import { RojoService } from './rojo'
 import { UpdaterService } from './updater'
 import { applyGoalMarker, buildTaskFooter } from './goalSync'
@@ -89,12 +90,17 @@ if (!gotLock) {
     })
     goalsService.onExternalEdit = (game, raw) => void team.pushLocalEdit(game, raw)
     const toolchain = new ToolchainService()
+    const mcpInstaller = new McpInstaller(join(app.getPath('userData'), 'mcp'))
+    // Warm the managed MCP install off the critical path — launches fall back
+    // to npx until it's ready.
+    void mcpInstaller.ensureInstalled()
     rojo = new RojoService((dir) => toolchain.setupRepo(dir))
     agents = new AgentService(worktrees, new SessionStore(join(app.getPath('userData'), 'sessions')), {
       onSettled: () => void usage?.refresh(),
       onStatus: (summary) => team.publishSession(summary),
       onRateLimit: (info) => usage?.ingestRateLimit(info),
-      prepareWorkspace: (dir) => toolchain.setupRepo(dir),
+      prepareWorkspace: (dir, game) => toolchain.prepareWorkspace(dir, game.repoPath),
+      robloxMcpEntry: () => mcpInstaller.entryPath(),
       taskFooter: (gameId) => buildTaskFooter(goalsService, gameId),
       applyMarker: (gameId, marker) => applyGoalMarker(goalsService, gameId, marker),
       applyNote: (gameId, text) => {

@@ -93,6 +93,29 @@ export async function commitAll(repoPath: string, message: string): Promise<void
 }
 
 /**
+ * Commit wally.lock once the first toolchain install produces it — the
+ * bootstrap commit predates `wally install`, so the lockfile arrives after.
+ * No-op when the file is absent, already committed, or gitignored (legacy
+ * games — porcelain lists nothing for ignored paths, so `add` is never
+ * reached). Pushes best-effort when an origin exists. True = a commit landed.
+ */
+export async function commitLockfile(repoPath: string): Promise<boolean> {
+  if (!fs.existsSync(path.join(repoPath, 'wally.lock'))) return false
+  const { stdout } = await git(repoPath, ['status', '--porcelain', '--', 'wally.lock'])
+  if (stdout.trim() === '') return false
+  await git(repoPath, ['add', 'wally.lock'])
+  await git(repoPath, ['commit', '-m', 'chore: lock wally dependencies'])
+  if (await remoteUrl(repoPath)) {
+    try {
+      await git(repoPath, ['push'])
+    } catch {
+      // Best-effort — the lockfile rides the next push otherwise.
+    }
+  }
+  return true
+}
+
+/**
  * Delete the GitHub repository behind this game. Irreversible.
  *
  * `gh` needs the `delete_repo` scope, which is NOT in the default set — a

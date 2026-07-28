@@ -23,6 +23,7 @@ import { STUDIO_GITHUB_ORG } from '@shared/teamDefaults'
 import {
   cloneRepo,
   commitAll,
+  commitLockfile,
   createGithubRepo,
   deleteGithubRepo,
   ensureOnGithub,
@@ -35,6 +36,7 @@ import {
   repoSlug,
   repoStatus
 } from './gitOps'
+import { createGame } from './gameCreate'
 import path from 'node:path'
 import fs from 'node:fs'
 import { scaffoldRobloxGame } from './robloxScaffold'
@@ -113,29 +115,29 @@ export function registerIpc(
     if (fs.existsSync(dir)) {
       throw new Error(`${dir} already exists — pick a different name or add it as an existing project.`)
     }
-    await initRepo(dir)
-    scaffoldRobloxGame(dir, name, slug)
-    const result = registry.add({ name, repoPath: dir })
-    goals.createTemplate(result.game.id)
-    const warnings: string[] = []
-    try {
-      await commitAll(dir, `chore: bootstrap ${name} via Bridge`)
-      try {
-        await createGithubRepo(dir, STUDIO_GITHUB_ORG, slug)
-      } catch (err) {
-        warnings.push(
-          `Created locally, but the GitHub repo was not created: ${err instanceof Error ? err.message : String(err)}. Install the GitHub CLI (winget install GitHub.cli, then gh auth login) or create ${STUDIO_GITHUB_ORG}/${slug} manually and add it as origin.`
-        )
-      }
-    } catch (err) {
-      warnings.push(
-        `Repo initialized but the first commit failed: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-    warnings.push(...(await toolchain.setupRepo(dir)))
-    team.onGameAdded(result.game)
-    broadcastRegistry()
-    return { game: result.game, warnings }
+    // Resolves after the local bootstrap; GitHub + toolchain continue in the
+    // background and stream EvGameCreateProgress events to the modal.
+    const run = await createGame(name, slug, dir, {
+      initRepo,
+      scaffold: scaffoldRobloxGame,
+      register: (gameName, repoPath) => registry.add({ name: gameName, repoPath }),
+      createGoalsTemplate: (gameId) => void goals.createTemplate(gameId),
+      broadcastRegistry,
+      commitAll,
+      createGithubRepo: (repoDir, repoSlugName) =>
+        createGithubRepo(repoDir, STUDIO_GITHUB_ORG, repoSlugName),
+      setupToolchain: (repoDir) => toolchain.setupRepo(repoDir),
+      commitLockfile,
+      onGameAdded: (game) => team.onGameAdded(game),
+      emit: (progress) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send(IPC.EvGameCreateProgress, progress)
+        }
+      },
+      org: STUDIO_GITHUB_ORG
+    })
+    void run.settled
+    return { game: run.game, warnings: run.warnings }
   })
 
   ipcMain.handle(IPC.GamesUpdate, (_event, game: Game) => {
