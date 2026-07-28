@@ -419,7 +419,14 @@ export interface UpdateState {
   reason: string | null
 }
 
-export interface BridgeApi {
+/*
+ * The renderer-facing API, split into one interface per domain so parallel
+ * branches extending different domains never edit the same lines. Add new
+ * methods to the matching domain interface (event subscriptions live with
+ * their owning domain); BridgeApi at the bottom just composes them.
+ */
+
+export interface GamesApi {
   listGames(): Promise<Game[]>
   addGame(input: AddGameInput): Promise<GameMutationResult>
   /**
@@ -433,11 +440,22 @@ export interface BridgeApi {
   removeGame(id: string): Promise<void>
   /** Delete a game beyond the registry. Every target is irreversible. */
   deleteGame(id: string, targets: GameDeleteTargets): Promise<string>
+  onRegistryChanged(cb: (games: Game[]) => void): () => void
+}
+
+export interface GoalsApi {
   getGoals(gameId: string): Promise<GoalsState>
   createGoalsTemplate(gameId: string): Promise<GoalsState>
   mutateGoals(gameId: string, mutation: GoalsMutation): Promise<GoalsState>
+  onGoalsChanged(cb: (state: GoalsState) => void): () => void
+}
+
+export interface ShellApi {
   openRepo(gameId: string): Promise<void>
   pickFolder(): Promise<string | null>
+}
+
+export interface AgentsApi {
   startAgent(gameId: string, config: AgentLaunchConfig): Promise<AgentSessionSummary>
   cancelAgent(sessionId: string): Promise<void>
   repromptAgent(sessionId: string, text: string): Promise<void>
@@ -454,15 +472,30 @@ export interface BridgeApi {
   resumeAgent(sessionId: string, text: string): Promise<AgentSessionSummary>
   listAgentSessions(gameId: string): Promise<AgentSessionSummary[]>
   getAgentTranscript(sessionId: string): Promise<AgentStreamItem[]>
+  onAgentEvent(cb: (event: AgentEvent) => void): () => void
+}
+
+export interface UsageApi {
   getUsage(): Promise<UsageSnapshot>
+  onUsageChanged(cb: (snapshot: UsageSnapshot) => void): () => void
+}
+
+export interface SettingsApi {
   getSettings(): Promise<AppSettings>
   setVaultPath(path: string | null): Promise<AppSettings>
   /** null = reset to the default (~/BridgeGames). */
   setGamesRoot(path: string | null): Promise<AppSettings>
   openGamesRoot(): Promise<void>
+  onSettingsChanged(cb: (settings: AppSettings) => void): () => void
+}
+
+export interface VaultApi {
   listVaultNotes(gameId: string): Promise<VaultNoteRef[]>
   openVault(): Promise<void>
   logDecision(gameId: string, title: string, body: string): Promise<void>
+}
+
+export interface TeamApi {
   teamConnect(input: TeamConnectInput): Promise<TeamState>
   teamDisconnect(): Promise<TeamState>
   getTeamState(): Promise<TeamState>
@@ -475,6 +508,11 @@ export interface BridgeApi {
   ): Promise<{ game: Game; warnings: string[] }>
   getTeamNote(gameId: string): Promise<TeamNoteState | null>
   saveTeamNote(gameId: string, content: string, baseVersion: number): Promise<TeamNoteState>
+  onTeamChanged(cb: (state: TeamState) => void): () => void
+  onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
+}
+
+export interface GitApi {
   gitStatus(gameId: string): Promise<GitRepoStatus>
   getTooling(gameId: string): Promise<ToolingReport>
   /** Create the org repo, repoint origin, push. Returns the new web URL. */
@@ -486,23 +524,35 @@ export interface BridgeApi {
   removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>
   /** Commits pending changes in `worktreePath` (if any), pushes, opens the PR. */
   createPr(gameId: string, branch: string, worktreePath?: string): Promise<string>
-  onGoalsChanged(cb: (state: GoalsState) => void): () => void
-  onRegistryChanged(cb: (games: Game[]) => void): () => void
-  onAgentEvent(cb: (event: AgentEvent) => void): () => void
-  onUsageChanged(cb: (snapshot: UsageSnapshot) => void): () => void
-  onSettingsChanged(cb: (settings: AppSettings) => void): () => void
-  onTeamChanged(cb: (state: TeamState) => void): () => void
-  onTeamNote(cb: (payload: { gameId: string; note: TeamNoteState }) => void): () => void
   /** Open a folder in VS Code — the repo itself, or one of its worktrees. */
   openInEditor(gameId: string, targetPath?: string): Promise<void>
+}
+
+export interface RojoApi {
   /** One click: VS Code + rojo serve (reuse or spawn on 34872+) + Roblox Studio. */
   rojoOpenBuild(gameId: string, targetPath?: string): Promise<RojoOpenBuildResult>
   /** Stop or detach the tracked serve. Returns an info message when there is one. */
   rojoStop(gameId: string): Promise<string | null>
   rojoStatus(gameId: string): Promise<RojoServeStatus>
   onRojoChanged(cb: (status: RojoServeStatus) => void): () => void
+}
+
+export interface UpdateApi {
   getUpdateState(): Promise<UpdateState>
   /** Install the downloaded update now and relaunch. */
   installUpdate(): Promise<void>
   onUpdateChanged(cb: (state: UpdateState) => void): () => void
 }
+
+export interface BridgeApi
+  extends GamesApi,
+    GoalsApi,
+    ShellApi,
+    AgentsApi,
+    UsageApi,
+    SettingsApi,
+    VaultApi,
+    TeamApi,
+    GitApi,
+    RojoApi,
+    UpdateApi {}
