@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { WorktreeService } from './worktrees'
+import { WorktreeService, parseNameStatusZ, parseStatusPorcelainZ } from './worktrees'
 import type { Game } from '@shared/types'
 
 let root: string
@@ -11,6 +11,11 @@ let repoPath: string
 
 function git(...args: string[]): void {
   execFileSync('git', ['-C', repoPath, ...args], { stdio: 'pipe' })
+}
+
+/** Slash- and case-insensitive: git prints `/`, path.join produces `\`. */
+function samePath(a: string, b: string): boolean {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
 }
 
 function makeGame(overrides: Partial<Game> = {}): Game {
@@ -115,5 +120,154 @@ describe('WorktreeService', () => {
     const lease = await service.acquire(makeGame(), 'session-d')
     const rel = path.relative(repoPath, lease.path)
     expect(rel.startsWith('..')).toBe(true)
+  })
+
+  it('serializes concurrent acquires so two sessions never share a worktree', async () => {
+    const service = new WorktreeService('conc')
+    const game = makeGame({ id: 'conc', worktreeRoot: path.join(root, 'conc-worktrees') })
+    // Leave one pristine worktree behind — the racy prize both launches want.
+    const seeded = await service.acquire(game, 'seed')
+    service.release('seed')
+    expect(fs.existsSync(seeded.path)).toBe(true)
+
+    const [a, b] = await Promise.all([
+      service.acquire(game, 'racer-a'),
+      service.acquire(game, 'racer-b')
+    ])
+    expect(a.path).not.toBe(b.path)
+  })
+
+  it('reports the holding sessionId in listWithUsage', async () => {
+    const service = new WorktreeService('owner')
+    const game = makeGame({ id: 'owner', worktreeRoot: path.join(root, 'owner-worktrees') })
+    const lease = await service.acquire(game, 'session-x')
+    let rows = await service.listWithUsage(game)
+    let row = rows.find((r) => samePath(r.path, lease.path))
+    expect(row?.inUse).toBe(true)
+    expect(row?.sessionId).toBe('session-x')
+
+    service.release('session-x')
+    rows = await service.listWithUsage(game)
+    row = rows.find((r) => samePath(r.path, lease.path))
+    expect(row?.inUse).toBe(false)
+    expect(row?.sessionId).toBeNull()
+  })
+
+  it('recycles a fully merged leftover branch instead of checking out its old tip', async () => {
+    const service = new WorktreeService('recycle')
+    const game = makeGame({ id: 'recycle', worktreeRoot: path.join(root, 'recycle-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    service.release('session-a')
+    // The worktree dir vanishes (OneDrive, manual delete) but the branch stays.
+    git('worktree', 'remove', '--force', first.path)
+    // The base moves on afterwards.
+    fs.writeFileSync(path.join(repoPath, 'recycle-marker.luau'), '-- new on main\n')
+    git('add', '-A')
+    git('commit', '-m', 'advance main')
+
+    const second = await service.acquire(game, 'session-b')
+    expect(path.basename(second.path)).toBe(path.basename(first.path))
+    expect(second.created).toBe(true)
+    // Recreated from today's base, not resurrected from the old tip.
+    expect(fs.existsSync(path.join(second.path, 'recycle-marker.luau'))).toBe(true)
+  })
+
+  it('skips a slot whose leftover branch still holds unmerged commits', async () => {
+    const service = new WorktreeService('keepwork')
+    const game = makeGame({ id: 'keepwork', worktreeRoot: path.join(root, 'keepwork-worktrees') })
+    const first = await service.acquire(game, 'session-a')
+    fs.writeFileSync(path.join(first.path, 'precious.luau'), '-- unmerged agent work\n')
+    execFileSync('git', ['-C', first.path, 'add', '-A'], { stdio: 'pipe' })
+    execFileSync('git', ['-C', first.path, 'commit', '-m', 'agent work'], { stdio: 'pipe' })
+    service.release('session-a')
+    git('worktree', 'remove', '--force', first.path)
+
+    const second = await service.acquire(game, 'session-b')
+    expect(path.basename(second.path)).not.toBe(path.basename(first.path))
+    // The unmerged branch survives, commits intact.
+    const tip = execFileSync('git', ['-C', repoPath, 'rev-parse', `${first.branch}`], {
+      stdio: 'pipe'
+    })
+      .toString()
+      .trim()
+    expect(tip.length).toBeGreaterThan(0)
+  })
+})
+
+describe('changed files', () => {
+  it('parseNameStatusZ handles adds, modifies, deletes, and renames', () => {
+    const raw = 'M\0src/a.luau\0A\0src/b.luau\0R100\0old.luau\0new.luau\0D\0gone.luau\0'
+    expect(parseNameStatusZ(raw)).toEqual([
+      { path: 'src/a.luau', status: 'M', uncommitted: false },
+      { path: 'src/b.luau', status: 'A', uncommitted: false },
+      { path: 'new.luau', status: 'R', uncommitted: false },
+      { path: 'gone.luau', status: 'D', uncommitted: false }
+    ])
+    expect(parseNameStatusZ('')).toEqual([])
+  })
+
+  it('parseStatusPorcelainZ maps untracked, modified, staged, and renamed entries', () => {
+    const raw = '?? new.luau\0 M src/a.luau\0A  staged.luau\0R  renamed.luau\0was.luau\0 D dropped.luau\0'
+    expect(parseStatusPorcelainZ(raw)).toEqual([
+      { path: 'new.luau', status: '?', uncommitted: true },
+      { path: 'src/a.luau', status: 'M', uncommitted: true },
+      { path: 'staged.luau', status: 'A', uncommitted: true },
+      { path: 'renamed.luau', status: 'R', uncommitted: true },
+      { path: 'dropped.luau', status: 'D', uncommitted: true }
+    ])
+    expect(parseStatusPorcelainZ('')).toEqual([])
+  })
+
+  it('reports committed and uncommitted files for a worktree, deduped', async () => {
+    const service = new WorktreeService('changes')
+    const game = makeGame({ id: 'changes', worktreeRoot: path.join(root, 'changes-worktrees') })
+    const lease = await service.acquire(game, 'session-a')
+    // One committed file, then touched again; one plain uncommitted edit.
+    fs.writeFileSync(path.join(lease.path, 'committed.luau'), '-- v1\n')
+    execFileSync('git', ['-C', lease.path, 'add', '-A'], { stdio: 'pipe' })
+    execFileSync('git', ['-C', lease.path, 'commit', '-m', 'work'], { stdio: 'pipe' })
+    fs.writeFileSync(path.join(lease.path, 'committed.luau'), '-- v2, uncommitted\n')
+    fs.appendFileSync(path.join(lease.path, 'GOALS.md'), 'edited\n')
+
+    const changes = await service.changesForGame(game)
+    expect(changes.isRepo).toBe(true)
+    const mine = changes.worktrees.find((w) => samePath(w.path, lease.path))
+    expect(mine).toBeDefined()
+    expect(mine?.branch).toBe(lease.branch)
+    const byPath = new Map(mine?.files.map((f) => [f.path, f]))
+    expect(byPath.get('committed.luau')).toEqual({
+      path: 'committed.luau',
+      status: 'A',
+      uncommitted: true
+    })
+    expect(byPath.get('GOALS.md')).toEqual({ path: 'GOALS.md', status: 'M', uncommitted: true })
+    service.release('session-a')
+  })
+
+  it('covers the main checkout dirty files as uncommitted-only', async () => {
+    const service = new WorktreeService('mainchk')
+    const game = makeGame({ id: 'mainchk', worktreeRoot: path.join(root, 'mainchk-worktrees') })
+    const marker = path.join(repoPath, 'main-dirty.luau')
+    fs.writeFileSync(marker, '-- operator edit\n')
+    try {
+      const changes = await service.changesForGame(game)
+      expect(changes.main?.path).toBe(repoPath)
+      const entry = changes.main?.files.find((f) => f.path === 'main-dirty.luau')
+      expect(entry).toEqual({ path: 'main-dirty.luau', status: '?', uncommitted: true })
+    } finally {
+      fs.rmSync(marker, { force: true })
+    }
+  })
+
+  it('returns isRepo:false outside a git repo', async () => {
+    const service = new WorktreeService()
+    const plainDir = path.join(root, 'not-a-repo-changes')
+    fs.mkdirSync(plainDir, { recursive: true })
+    const changes = await service.changesForGame(
+      makeGame({ id: 'plain-changes', repoPath: plainDir })
+    )
+    expect(changes.isRepo).toBe(false)
+    expect(changes.main).toBeNull()
+    expect(changes.worktrees).toEqual([])
   })
 })

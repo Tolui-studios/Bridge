@@ -2,11 +2,19 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Game, WorktreeRow } from '@shared/types'
+import type {
+  ChangedFile,
+  Game,
+  GameWorktreeChanges,
+  WorktreeChangeSet,
+  WorktreeRow
+} from '@shared/types'
 import { ensureGeneratedIgnored } from './gitOps'
 
 const execFileAsync = promisify(execFile)
 const MAX_SLOTS = 32
+/** Caps every changed-file list so IPC payloads and render cost stay bounded. */
+const MAX_CHANGED_FILES = 400
 
 export interface WorktreeLease {
   path: string
@@ -39,7 +47,25 @@ export class WorktreeService {
    */
   constructor(private readonly branchPrefix: string = 'agent') {}
 
-  async acquire(game: Game, sessionId: string): Promise<WorktreeLease> {
+  /**
+   * Serializes every pool mutation. Agent launches fire concurrently, and an
+   * unserialized acquire is a TOCTOU race: two sessions pass the pristine
+   * check on the same worktree before either claims it, and the second's
+   * `reset --hard` erases the first agent's in-flight work.
+   */
+  private chain: Promise<unknown> = Promise.resolve()
+
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.chain.then(fn, fn)
+    this.chain = next.catch(() => {})
+    return next
+  }
+
+  acquire(game: Game, sessionId: string): Promise<WorktreeLease> {
+    return this.serialize(() => this.acquireLocked(game, sessionId))
+  }
+
+  private async acquireLocked(game: Game, sessionId: string): Promise<WorktreeLease> {
     if (!fs.existsSync(path.join(game.repoPath, '.git'))) {
       return {
         path: game.repoPath,
@@ -93,8 +119,13 @@ export class WorktreeService {
         try {
           await this.git(game.repoPath, ['worktree', 'add', dir, '-b', branch, game.defaultBranch])
         } catch {
-          // Branch already exists (from a pruned worktree) — try checking it out.
-          await this.git(game.repoPath, ['worktree', 'add', dir, branch])
+          // Branch left over from a removed worktree. Only recycle it when it
+          // holds no work of its own — checking out an old tip would hand this
+          // agent the previous agent's unmerged commits (bypassing the
+          // pristine check), and its next commit would bury them.
+          if (!(await this.isAncestor(game.repoPath, branch, game.defaultBranch))) continue
+          await this.git(game.repoPath, ['branch', '-D', branch])
+          await this.git(game.repoPath, ['worktree', 'add', dir, '-b', branch, game.defaultBranch])
         }
       } catch {
         continue
@@ -137,14 +168,107 @@ export class WorktreeService {
     const existing = await this.list(game.repoPath)
     const mine = existing.filter((w) => isUnder(w.path, game.worktreeRoot) && fs.existsSync(w.path))
     return Promise.all(
-      mine.map(async (w) => ({
-        path: w.path,
-        name: path.basename(w.path),
-        branch: w.branch,
-        inUse: this.inUse.has(normalize(w.path)),
-        ahead: await this.aheadOfBase(w.path, game.defaultBranch)
-      }))
+      mine.map(async (w) => {
+        const holder = this.inUse.get(normalize(w.path)) ?? null
+        return {
+          path: w.path,
+          name: path.basename(w.path),
+          branch: w.branch,
+          inUse: holder !== null,
+          sessionId: holder,
+          ahead: await this.aheadOfBase(w.path, game.defaultBranch)
+        }
+      })
     )
+  }
+
+  /**
+   * Every file each of this game's working trees touches — the worktrees
+   * (committed-vs-base plus uncommitted) and the main checkout (uncommitted
+   * only; committed-vs-base is meaningless on the base itself). Read-only by
+   * design: no prune, so the 15s UI poll never races the serialized mutators.
+   */
+  async changesForGame(game: Game): Promise<GameWorktreeChanges> {
+    const fetchedAt = Date.now()
+    if (!fs.existsSync(path.join(game.repoPath, '.git'))) {
+      return { gameId: game.id, isRepo: false, main: null, worktrees: [], fetchedAt }
+    }
+    const existing = await this.list(game.repoPath)
+    const mine = existing.filter((w) => isUnder(w.path, game.worktreeRoot) && fs.existsSync(w.path))
+    const [main, ...worktrees] = await Promise.all([
+      this.changedFiles(game.repoPath, game.defaultBranch, false).then((set) => ({
+        path: game.repoPath,
+        branch: game.defaultBranch,
+        ...set
+      })),
+      ...mine.map((w) =>
+        this.changedFiles(w.path, game.defaultBranch, true).then((set) => ({
+          path: w.path,
+          branch: w.branch,
+          ...set
+        }))
+      )
+    ])
+    return { gameId: game.id, isRepo: true, main, worktrees, fetchedAt }
+  }
+
+  /**
+   * Files this working dir touches: committed diff against the merge-base
+   * with the base branch (three-dot, so a base that moved on never pollutes
+   * the list) plus uncommitted working-tree changes, deduped by path. When
+   * both exist for one path the committed status letter wins and
+   * `uncommitted` is set. Degrades to uncommitted-only if the base diff fails
+   * (renamed base, detached edge cases) — same spirit as aheadOfBase.
+   */
+  private async changedFiles(
+    dirPath: string,
+    baseBranch: string,
+    includeCommitted: boolean
+  ): Promise<Omit<WorktreeChangeSet, 'path' | 'branch'>> {
+    let committed: ChangedFile[] = []
+    if (includeCommitted) {
+      try {
+        const { stdout } = await this.git(dirPath, [
+          'diff',
+          '--name-status',
+          '-z',
+          `${baseBranch}...HEAD`
+        ])
+        committed = parseNameStatusZ(stdout)
+      } catch {
+        // Unknown base — the uncommitted list below still tells the story.
+      }
+    }
+    let uncommitted: ChangedFile[] = []
+    try {
+      const { stdout } = await this.git(dirPath, [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all'
+      ])
+      uncommitted = parseStatusPorcelainZ(stdout)
+    } catch {
+      // Unreadable tree: report whatever the committed diff found.
+    }
+    const byPath = new Map<string, ChangedFile>()
+    for (const file of committed) byPath.set(file.path, file)
+    for (const file of uncommitted) {
+      const prior = byPath.get(file.path)
+      byPath.set(file.path, prior ? { ...prior, uncommitted: true } : file)
+    }
+    const all = [...byPath.values()]
+    return { files: all.slice(0, MAX_CHANGED_FILES), truncated: all.length > MAX_CHANGED_FILES }
+  }
+
+  /** True when `branch` has no commits that `base` lacks (merged or identical). */
+  private async isAncestor(repoPath: string, branch: string, base: string): Promise<boolean> {
+    try {
+      await this.git(repoPath, ['merge-base', '--is-ancestor', branch, base])
+      return true
+    } catch {
+      return false
+    }
   }
 
   /** Commits on this worktree's branch that aren't on the base branch. */
@@ -162,7 +286,13 @@ export class WorktreeService {
   }
 
   /** Remove a worktree (refuses while a live session holds it). */
-  async remove(game: Game, worktreePath: string, force: boolean): Promise<void> {
+  remove(game: Game, worktreePath: string, force: boolean): Promise<void> {
+    // Same pool as acquire: a remove landing between another launch's
+    // candidate scan and its claim is the same race, so it takes the chain.
+    return this.serialize(() => this.removeLocked(game, worktreePath, force))
+  }
+
+  private async removeLocked(game: Game, worktreePath: string, force: boolean): Promise<void> {
     if (!isUnder(worktreePath, game.worktreeRoot)) {
       throw new Error('That path is not one of this game’s worktrees.')
     }
@@ -244,4 +374,61 @@ function normalize(p: string): string {
 export function isUnder(child: string, parent: string): boolean {
   const rel = path.relative(path.resolve(parent), path.resolve(child))
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+}
+
+/**
+ * Parse `git diff --name-status -z` output: NUL-separated [status, path]
+ * pairs, except renames/copies which are [R…|C…, oldPath, newPath] triples —
+ * the NEW path is what the tree contains, so that one is kept.
+ */
+export function parseNameStatusZ(raw: string): ChangedFile[] {
+  const tokens = raw.split('\0')
+  const files: ChangedFile[] = []
+  for (let i = 0; i + 1 < tokens.length; ) {
+    const code = tokens[i]
+    if (code === '') break
+    if (code[0] === 'R' || code[0] === 'C') {
+      const newPath = tokens[i + 2]
+      if (newPath === undefined) break
+      files.push({ path: newPath, status: code[0] === 'R' ? 'R' : 'A', uncommitted: false })
+      i += 3
+    } else {
+      const letter = code[0]
+      files.push({
+        path: tokens[i + 1],
+        status: letter === 'A' || letter === 'D' ? letter : 'M',
+        uncommitted: false
+      })
+      i += 2
+    }
+  }
+  return files
+}
+
+/**
+ * Parse `git status --porcelain=v1 -z --untracked-files=all` output:
+ * NUL-separated `XY path` entries; a rename/copy in X carries the OLD path as
+ * one extra NUL token, consumed and dropped. Everything here is by
+ * definition uncommitted.
+ */
+export function parseStatusPorcelainZ(raw: string): ChangedFile[] {
+  const tokens = raw.split('\0')
+  const files: ChangedFile[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i]
+    if (entry.length < 4) continue
+    const x = entry[0]
+    const y = entry[1]
+    const filePath = entry.slice(3)
+    let status: ChangedFile['status']
+    if (x === '?') {
+      status = '?'
+    } else {
+      const code = y !== ' ' ? y : x
+      status = code === 'A' || code === 'D' || code === 'M' || code === 'R' ? code : 'M'
+    }
+    files.push({ path: filePath, status, uncommitted: true })
+    if (x === 'R' || x === 'C') i++
+  }
+  return files
 }

@@ -38,6 +38,7 @@ export const IPC = {
   GameTooling: 'bridge:git:tooling',
   GitPull: 'bridge:git:pull',
   GitWorktrees: 'bridge:git:worktrees',
+  GitWorktreeChanges: 'bridge:git:worktree-changes',
   GitWorktreeRemove: 'bridge:git:worktree-remove',
   GitWorktreeOpenEditor: 'bridge:git:worktree-open-editor',
   GitCreatePr: 'bridge:git:create-pr',

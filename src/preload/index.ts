@@ -80,6 +80,7 @@ const api: BridgeApi = {
   getTooling: (gameId: string) => ipcRenderer.invoke(IPC.GameTooling, gameId),
   gitPull: (gameId: string) => ipcRenderer.invoke(IPC.GitPull, gameId),
   listWorktrees: (gameId: string) => ipcRenderer.invoke(IPC.GitWorktrees, gameId),
+  worktreeChanges: (gameId: string) => ipcRenderer.invoke(IPC.GitWorktreeChanges, gameId),
   removeWorktree: (gameId: string, worktreePath: string, force: boolean) =>
     ipcRenderer.invoke(IPC.GitWorktreeRemove, gameId, worktreePath, force),
   createPr: (gameId: string, branch: string, worktreePath?: string) =>

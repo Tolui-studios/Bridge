@@ -289,10 +289,45 @@ export interface WorktreeRow {
   branch: string | null
   inUse: boolean
   /**
+   * Live session currently holding this worktree; null when free. Not
+   * persisted: after an app restart every previous session is dead, so a
+   * held-looking worktree from before the restart is really a leftover.
+   */
+  sessionId: string | null
+  /**
    * Commits on this branch that aren't on the default branch. Zero means
    * there is nothing to open a pull request for.
    */
   ahead: number
+}
+
+/** One file a working tree touches. Paths are repo-relative, forward slashes. */
+export interface ChangedFile {
+  path: string
+  /** A added, M modified, D deleted, R renamed, '?' untracked. */
+  status: 'A' | 'M' | 'D' | 'R' | '?'
+  /** True when the working tree touches it (not, or not only, committed). */
+  uncommitted: boolean
+}
+
+/** Every file one worktree (or the main checkout) has changed. */
+export interface WorktreeChangeSet {
+  /** Absolute path — join key with WorktreeRow.path / RojoServeStatus.targetPath. */
+  path: string
+  branch: string | null
+  files: ChangedFile[]
+  /** True when the list was capped — counts are lower bounds. */
+  truncated: boolean
+}
+
+/** One consistent snapshot of what every working tree of a game touches. */
+export interface GameWorktreeChanges {
+  gameId: string
+  isRepo: boolean
+  /** Uncommitted files in the main checkout (repoPath); null when not a repo. */
+  main: WorktreeChangeSet | null
+  worktrees: WorktreeChangeSet[]
+  fetchedAt: number
 }
 
 export interface VaultNoteRef {
@@ -391,6 +426,8 @@ export interface BridgeApi {
   moveToOrg(gameId: string): Promise<string>
   gitPull(gameId: string): Promise<string>
   listWorktrees(gameId: string): Promise<WorktreeRow[]>
+  /** Per-worktree changed files + main-checkout dirty files, one snapshot. */
+  worktreeChanges(gameId: string): Promise<GameWorktreeChanges>
   removeWorktree(gameId: string, worktreePath: string, force: boolean): Promise<void>
   /** Commits pending changes in `worktreePath` (if any), pushes, opens the PR. */
   createPr(gameId: string, branch: string, worktreePath?: string): Promise<string>

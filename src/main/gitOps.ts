@@ -429,6 +429,11 @@ export interface PrMessage {
   body: string
 }
 
+/** Push rejection that means "remote history diverged" — not auth/network. */
+export function isNonFastForward(stderr: string): boolean {
+  return /non-fast-forward|fetch first|\[rejected\]|stale info/i.test(stderr)
+}
+
 export async function pushBranchForPr(
   game: Game,
   branch: string,
@@ -477,7 +482,21 @@ export async function pushBranchForPr(
     await git(game.repoPath, ['push', '-u', 'origin', `${branch}:${branch}`])
   } catch (err) {
     const anyErr = err as { stderr?: string; message?: string }
-    throw new Error((anyErr.stderr || anyErr.message || 'git push failed').trim().slice(0, 400))
+    const detail = (anyErr.stderr || anyErr.message || 'git push failed').trim()
+    // Agent slot branches are recycled locally (reset to the base on reuse),
+    // so the remote can hold a superseded history from an earlier session.
+    // agent-<user>-N names are owned by this machine (per-user prefix), so a
+    // lease-guarded force never clobbers another operator's work. The default
+    // branch is never forced.
+    if (!isNonFastForward(detail) || branch === game.defaultBranch) {
+      throw new Error(detail.slice(0, 400))
+    }
+    try {
+      await git(game.repoPath, ['push', '-u', '--force-with-lease', 'origin', `${branch}:${branch}`])
+    } catch (err2) {
+      const anyErr2 = err2 as { stderr?: string; message?: string }
+      throw new Error((anyErr2.stderr || anyErr2.message || 'git push failed').trim().slice(0, 400))
+    }
   }
 
   const compareUrl = `${webUrl}/compare/${encodeURIComponent(game.defaultBranch)}...${encodeURIComponent(branch)}?expand=1`

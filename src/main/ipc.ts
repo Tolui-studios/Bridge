@@ -362,6 +362,9 @@ export function registerIpc(
   ipcMain.handle(IPC.GitWorktrees, (_event, gameId: string) =>
     worktrees.listWithUsage(requireGame(gameId))
   )
+  ipcMain.handle(IPC.GitWorktreeChanges, (_event, gameId: string) =>
+    worktrees.changesForGame(requireGame(gameId))
+  )
   ipcMain.handle(
     IPC.GitWorktreeRemove,
     (_event, gameId: string, worktreePath: string, force: boolean) => {
