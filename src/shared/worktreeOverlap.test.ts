@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeOverlap } from './worktreeOverlap'
+import { computeOverlap, withClaims } from './worktreeOverlap'
 
 describe('computeOverlap', () => {
   it('returns empty results for disjoint trees', () => {
@@ -59,5 +59,48 @@ describe('computeOverlap', () => {
     expect(result.byKey['main']).toEqual(['src/hot.luau'])
     expect(result.byKey['a']).toEqual(['src/hot.luau', 'src/pair.luau'])
     expect(result.byKey['b']).toEqual(['src/hot.luau', 'src/pair.luau'])
+  })
+})
+
+describe('withClaims', () => {
+  it('merges a claim into the source with the same key — no self-conflict', () => {
+    const merged = withClaims(
+      [{ key: 'C:\\wt\\agent-1', files: ['src/a.luau'] }],
+      [{ key: 'c:/wt/agent-1', files: ['src/a.luau', 'CLAUDE.md'] }]
+    )
+    expect(merged).toHaveLength(1)
+    const result = computeOverlap(merged)
+    // A tree claiming a file it already changed must not conflict with itself.
+    expect(result.byFile).toEqual({})
+  })
+
+  it('appends a new source for a session that only declared intent', () => {
+    const merged = withClaims(
+      [{ key: 'C:\\wt\\agent-1', files: ['CLAUDE.md'] }],
+      [{ key: 'C:\\wt\\agent-2', files: ['claude.md'] }]
+    )
+    expect(merged).toHaveLength(2)
+    const result = computeOverlap(merged)
+    expect(result.byFile['claude.md']).toEqual(['C:\\wt\\agent-1', 'C:\\wt\\agent-2'])
+  })
+
+  it('surfaces a claim colliding with another worktree’s changed file', () => {
+    const merged = withClaims(
+      [
+        { key: 'C:\\wt\\agent-1', files: ['src/shared/Config.luau'] },
+        { key: 'C:\\wt\\agent-2', files: ['src/other.luau'] }
+      ],
+      [{ key: 'C:\\wt\\agent-2', files: ['src/shared/config.luau'] }]
+    )
+    const result = computeOverlap(merged)
+    expect(result.byFile['src/shared/config.luau']).toEqual(['C:\\wt\\agent-1', 'C:\\wt\\agent-2'])
+  })
+
+  it('drops empty claim lists and leaves sources untouched', () => {
+    const sources = [{ key: 'a', files: ['x.ts'] }]
+    const merged = withClaims(sources, [{ key: 'b', files: [] }])
+    expect(merged).toEqual([{ key: 'a', files: ['x.ts'] }])
+    // And never mutates the caller's arrays.
+    expect(sources[0].files).toEqual(['x.ts'])
   })
 })

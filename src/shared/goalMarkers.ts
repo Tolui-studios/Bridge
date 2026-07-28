@@ -11,19 +11,23 @@ import type { ChecklistItem } from './types'
  *   BRIDGE:TEST <step>         — one step for the operator to verify in Studio
  *   BRIDGE:ASK <question>      — blocked; needs an answer before continuing
  *   BRIDGE:NOTE <fact>         — durable convention/gotcha for the game's CLAUDE.md
+ *   BRIDGE:CLAIM <paths>       — repo-relative files this agent intends to edit
  *
- * TEST, ASK and NOTE never touch GOALS.md. Agents cannot run the game, so
- * instead of pretending to playtest they hand back steps for a human; when a
- * decision is genuinely the operator's, they ask rather than guessing; and
+ * TEST, ASK, NOTE and CLAIM never touch GOALS.md. Agents cannot run the game,
+ * so instead of pretending to playtest they hand back steps for a human; when
+ * a decision is genuinely the operator's, they ask rather than guessing;
  * NOTE appends to the canonical repo CLAUDE.md (claudeNotes.ts), so what one
- * agent learns reaches every future agent without waiting on a PR merge.
+ * agent learns reaches every future agent without waiting on a PR merge; and
+ * CLAIM (parsed by agentClaims.ts) is soft merge-conflict coordination —
+ * claims surface in other launches' footers and the worktree overlap panel,
+ * and die with the session.
  */
 export interface BridgeMarker {
-  kind: 'done' | 'start' | 'add' | 'test' | 'ask' | 'note'
+  kind: 'done' | 'start' | 'add' | 'test' | 'ask' | 'note' | 'claim'
   text: string
 }
 
-const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD|TEST|ASK|NOTE)\s+(.+?)\s*$/gim
+const MARKER_RE = /^\s*BRIDGE:(DONE|START|ADD|TEST|ASK|NOTE|CLAIM)\s+(.+?)\s*$/gim
 
 export function parseBridgeMarkers(text: string): BridgeMarker[] {
   const markers: BridgeMarker[] = []

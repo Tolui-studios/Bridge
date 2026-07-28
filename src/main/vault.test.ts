@@ -32,7 +32,8 @@ const summary: AgentSessionSummary = {
   testSteps: [],
   pendingQuestion: null,
   pendingChoices: null,
-  claudeSessionId: null
+  claudeSessionId: null,
+  claims: []
 }
 
 beforeAll(() => {

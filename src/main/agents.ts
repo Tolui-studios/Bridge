@@ -1,6 +1,6 @@
 import { app, webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
@@ -14,6 +14,7 @@ import type {
 import { IPC } from '@shared/ipc-channels'
 import { parseBridgeMarkers } from '@shared/goalMarkers'
 import type { BridgeMarker } from '@shared/goalMarkers'
+import { parseClaimPaths, unionClaims } from '@shared/agentClaims'
 import { ROBLOX_MCP_PACKAGE, ROBLOX_MCP_SERVER, wantsRobloxMcp } from '@shared/robloxMcp'
 import type {
   AgentEvent,
@@ -33,6 +34,8 @@ import {
 } from './agentChoices'
 import { sanitizeToolList, toAllowRules } from './agentTools'
 import { autoPullDefaultBranch } from './gitOps'
+import { buildParallelWorkSection } from './parallelWork'
+import type { ParallelWorkEntry } from './parallelWork'
 import type { WorktreeLease, WorktreeService } from './worktrees'
 import type { SessionStore } from './sessionStore'
 
@@ -217,7 +220,8 @@ export class AgentService {
         testSteps: persisted.testSteps ?? [],
         pendingQuestion: persisted.pendingQuestion ?? null,
         pendingChoices: persisted.pendingChoices ?? null,
-        claudeSessionId: persisted.claudeSessionId ?? null
+        claudeSessionId: persisted.claudeSessionId ?? null,
+        claims: persisted.claims ?? []
       }
       if (summary.status === 'running' || summary.status === 'idle') {
         // The app died while this session was live.
@@ -269,7 +273,8 @@ export class AgentService {
         testSteps: [],
         pendingQuestion: null,
         pendingChoices: null,
-        claudeSessionId: null
+        claudeSessionId: null,
+        claims: []
       },
       items: [],
       abort: new AbortController(),
@@ -721,6 +726,7 @@ export class AgentService {
         initialText = opts.text
       } else {
         const footer = this.hooks.taskFooter?.(game.id) ?? ''
+        const parallel = await this.buildParallelContext(record, game)
         let vaultBlock = ''
         if (opts.vaultNotes.length > 0 && this.hooks.vaultContext) {
           try {
@@ -731,7 +737,7 @@ export class AgentService {
             this.push(record, 'stderr', `vault notes failed: ${err instanceof Error ? err.message : String(err)}`)
           }
         }
-        initialText = opts.task + footer + vaultBlock
+        initialText = opts.task + footer + parallel + vaultBlock
       }
       record.mcpLive = wantsRobloxMcp(record.summary.allowedTools)
       const stream = query({
@@ -881,6 +887,54 @@ export class AgentService {
     }
   }
 
+  /**
+   * The parallel-work block appended to a fresh launch: the BRIDGE:CLAIM
+   * protocol plus what other live sessions of this game have already changed
+   * or claimed, so the new agent steers around merge conflicts instead of
+   * discovering them at PR time. Also warns when the main checkout is dirty —
+   * worktrees branch from the last commit, so uncommitted work would be
+   * silently absent. Any failure degrades to the bare protocol paragraph;
+   * awareness must never block a launch. Resume sends nothing (no footer on
+   * resume by design, and a stale in-flight list is worse than none).
+   */
+  private async buildParallelContext(record: SessionRecord, game: Game): Promise<string> {
+    const samePath = (a: string, b: string): boolean =>
+      a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+    let entries: ParallelWorkEntry[] = []
+    try {
+      const changes = await this.worktrees.changesForGame(game)
+      const mainDirty = changes.main?.files.length ?? 0
+      if (mainDirty > 0) {
+        this.push(
+          record,
+          'system',
+          `main checkout has ${mainDirty} uncommitted file(s) — this worktree branches from the last commit; commit or stash if that work should be included`
+        )
+      }
+      entries = [...this.sessions.values()]
+        .filter(
+          (other) =>
+            other.summary.gameId === game.id &&
+            other.summary.id !== record.summary.id &&
+            isLive(other.summary.status)
+        )
+        .map((other) => {
+          const cwd = other.summary.cwd
+          const changeSet = cwd ? changes.worktrees.find((w) => samePath(w.path, cwd)) : undefined
+          const task = other.summary.task.split(/\r?\n/)[0].trim()
+          const snippet = task.length > 40 ? `${task.slice(0, 40)}…` : task
+          return {
+            label: `${cwd ? basename(cwd) : 'another session'} (“${snippet}”)`,
+            changedFiles: changeSet?.files.map((f) => f.path) ?? [],
+            claims: other.summary.claims
+          }
+        })
+    } catch {
+      // Degrade to the bare protocol paragraph.
+    }
+    return buildParallelWorkSection(entries, game.defaultBranch)
+  }
+
   private applyMarkers(record: SessionRecord, text: string): void {
     for (const marker of parseBridgeMarkers(text)) {
       // A question for the operator: surface it and wait. The agent ends its
@@ -893,6 +947,18 @@ export class AgentService {
             ? `${record.summary.pendingQuestion}\n${question}`
             : question
           this.push(record, 'goal', `question: ${question}`)
+          this.emitStatus(record)
+        }
+        continue
+      }
+      // CLAIM is soft merge-conflict coordination: remember the declared
+      // paths on the summary so other launches' footers and the worktree
+      // overlap panel can steer around them. Never a lock.
+      if (marker.kind === 'claim') {
+        const paths = parseClaimPaths(marker.text)
+        if (paths.length > 0) {
+          record.summary.claims = unionClaims(record.summary.claims, paths)
+          this.push(record, 'goal', `claimed: ${paths.join(', ')}`)
           this.emitStatus(record)
         }
         continue
